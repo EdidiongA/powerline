@@ -1,0 +1,32 @@
+{
+  "name": "powerline",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Powerline — Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
+  "license": "MIT",
+  "scripts": {
+    "build:ui": "vite build",
+    "build:server": "tsc -p tsconfig.json",
+    "build": "npm run build:ui && npm run build:server",
+    "dev": "npm run build:ui && tsx watch src/http.ts",
+    "start": "node dist/http.js",
+    "smoke": "tsx scripts/smoke.ts",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1128.0",
+    "@hono/node-server": "^2.1.1",
+    "@modelcontextprotocol/ext-apps": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "hono": "^4",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vite": "^6",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

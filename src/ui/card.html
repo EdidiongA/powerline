@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Powerline</title>
+    <style>
+      :root { font-family: system-ui, -apple-system, sans-serif; color-scheme: light dark; --ok:#2e9e6a; --warn:#d99a1a; --bad:#d64545; --muted:rgba(127,127,127,.7); --box:rgba(127,127,127,.12); }
+      body { margin:0; padding:12px; background:transparent; }
+      .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+      .head h2 { margin:0; font-size:15px; }
+      .head .src { font-size:11px; color:var(--muted); }
+      .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px; }
+      .tile { background:var(--box); border-radius:10px; padding:10px 10px 8px; }
+      .tile .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+      .tile .v { font-size:20px; font-weight:650; margin-top:2px; }
+      .tile .s { font-size:11px; color:var(--muted); }
+      .soc { position:relative; height:10px; background:var(--box); border-radius:6px; overflow:hidden; margin:6px 0 4px; }
+      .soc > i { position:absolute; left:0; top:0; bottom:0; background:var(--ok); border-radius:6px; }
+      .soc > b { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--bad); }
+      .msg { font-size:13px; margin:8px 0 6px; }
+      svg { width:100%; height:auto; display:block; }
+      .fc { background:var(--box); border-radius:10px; padding:8px; }
+      .fc .l { font-size:11px; color:var(--muted); margin-bottom:4px; }
+      .empty { color:var(--muted); font-size:13px; }
+    </style>
+  </head>
+  <body>
+    <div class="head"><h2>Powerline</h2><span class="src" id="src">connecting…</span></div>
+    <div id="root"><div class="empty">Waiting for power_status…</div></div>
+    <script type="module" src="./card.ts"></script>
+  </body>
+</html>
