@@ -59,3 +59,31 @@ test("grid probability learned from events", () => {
   assert.equal(p[9], 0);
   assert.equal(p[14], 1);
 });
+
+test("planDay schedules heavy loads into daylight and never breaches the floor", async () => {
+  const { planDay } = await import("../src/forecast.js");
+  const base = { profile, socPct: 40, pvForecastW: Array.from({ length: 24 }, (_, h) => clearSkyPvW((6 + h) % 24, 4.5)), loadForecastW: Array.from({ length: 24 }, (_, h) => typicalLoadW((6 + h) % 24)), gridForecast: new Array(24).fill(false) };
+  const plan = planDay(base, [
+    { name: "washing machine", watts: 500, minutes: 45 },
+    { name: "iron", watts: 2000, minutes: 30 },
+    { name: "pump", watts: 750, minutes: 60 },
+  ]);
+  assert.equal(plan.hitsFloor, false);
+  for (const it of plan.items) {
+    assert.ok(it.startHour !== null, `${it.name} unscheduled`);
+    assert.ok(it.startHour! >= 2 && it.startHour! <= 12, `${it.name} at +${it.startHour}h (06:00 base) should be daytime`);
+  }
+});
+
+test("planDay still schedules surplus-only slots when the battery will breach overnight anyway", async () => {
+  const { planDay } = await import("../src/forecast.js");
+  const base = { profile, socPct: 25, pvForecastW: Array.from({ length: 24 }, (_, h) => clearSkyPvW((21 + h) % 24, 4.5)), loadForecastW: new Array(24).fill(300), gridForecast: new Array(24).fill(false) };
+  const plan = planDay(base, [{ name: "iron", watts: 2000, minutes: 30 }, { name: "washing machine", watts: 500, minutes: 45 }]);
+  for (const it of plan.items) { assert.ok(it.startHour !== null, `${it.name} unscheduled`); assert.equal(it.onSurplus, true); }
+});
+
+test("starting at or below the reserve reports hitsFloor immediately", () => {
+  const r = forecast({ ...night(), socPct: 5 });
+  assert.equal(r.hitsFloor, true);
+  assert.equal(r.hoursToFloor, 0);
+});

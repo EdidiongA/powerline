@@ -53,7 +53,7 @@ export function forecast(input: ForecastInput, horizonHours = 24, stepsPerHour =
   let soc = input.socPct;
   const points: ForecastPoint[] = [];
   let minSoc = soc;
-  let hoursToFloor: number | null = null;
+  let hoursToFloor: number | null = soc <= floor ? 0 : null; // already at/below reserve
   const dt = 1 / stepsPerHour;
 
   for (let h = 0; h < horizonHours; h++) {
@@ -147,3 +147,62 @@ export function gridProbabilityByHour(events: GridEvent[], weekday: number): num
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
+
+// ---- Day planner -----------------------------------------------------------
+
+export interface PlanItem {
+  name: string;
+  watts: number;
+  minutes: number;
+  startHour: number | null;   // offset from now; null = could not be scheduled
+  onSurplus: boolean;         // runs on PV surplus (free) vs draws from battery/grid
+  reason: string;
+}
+
+export interface DayPlan {
+  items: PlanItem[];
+  minSocPct: number;          // with all scheduled items applied
+  hitsFloor: boolean;
+}
+
+/**
+ * Greedy schedule: heaviest appliances first, each placed at the earliest slot
+ * that keeps SOC above the reserve (preferring PV-surplus hours), with earlier
+ * placements folded into the baseline so later ones see the real picture.
+ */
+export function planDay(base: ForecastInput, appliances: Appliance[], horizonHours = 24): DayPlan {
+  const floor = base.profile.reserveSocPct;
+  const extra: NonNullable<ForecastInput["extraLoads"]> = [...(base.extraLoads ?? [])];
+  const items: PlanItem[] = [];
+  const sorted = [...appliances].sort((a, b) => b.watts * b.minutes - a.watts * a.minutes);
+  const baselineBreaches = forecast(base, horizonHours).hitsFloor;
+
+  for (const a of sorted) {
+    const runHours = Math.max(1, Math.ceil(a.minutes / 60));
+    let placed: { h: number; onSurplus: boolean } | null = null;
+    // Pass 1: prefer slots fully on PV surplus. Pass 2: any slot that keeps SOC above floor.
+    for (const wantSurplus of [true, false]) {
+      for (let h = 0; h <= horizonHours - runHours; h++) {
+        if (a.watts + (base.loadForecastW[h] ?? 0) > base.profile.inverterKw * 1000) continue;
+        const trial = forecast({ ...base, extraLoads: [...extra, { startHour: h, watts: a.watts, minutes: a.minutes }] }, horizonHours);
+        const onSurplus = trial.points.slice(h, h + runHours).every((p) => p.batteryW >= 0);
+        // Keep the floor intact; if the household is already going to breach it tonight,
+        // still allow appliances that run entirely on PV surplus (they cost the battery nothing).
+        const ok = trial.minSocPct > floor || (baselineBreaches && onSurplus);
+        if (ok && (!wantSurplus || onSurplus)) { placed = { h, onSurplus }; break; }
+      }
+      if (placed) break;
+    }
+    if (placed) {
+      extra.push({ startHour: placed.h, watts: a.watts, minutes: a.minutes });
+      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: placed.h, onSurplus: placed.onSurplus,
+        reason: placed.onSurplus ? "runs on solar surplus" : "battery stays above reserve" });
+    } else {
+      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: null, onSurplus: false,
+        reason: baselineBreaches ? "no solar-surplus slot today" : `no slot keeps the battery above ${floor}% today` });
+    }
+  }
+  const f = forecast({ ...base, extraLoads: extra }, horizonHours);
+  items.sort((x, y) => (x.startHour ?? 99) - (y.startHour ?? 99));
+  return { items, minSocPct: f.minSocPct, hitsFloor: f.hitsFloor };
+}

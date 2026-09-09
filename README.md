@@ -17,7 +17,8 @@ token). A built-in simulator runs without any hardware.
 npm install
 npm run build          # bundles the MCP App card + compiles the server
 npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
-npm run smoke          # (second terminal) full protocol round-trip through every tool
+npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
+# to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
 npm test               # forecast-engine tests
 ```
 
@@ -44,18 +45,24 @@ Postman, Goose) to `/mcp`. For a public URL use `ngrok http 3000` and set `HOST=
 | `evening_briefing` | "Power briefing" | One spoken paragraph (Amazon Bedrock when configured). |
 | `setup_system` | "Set up my solar" | Stores array kW, battery kWh, inverter kW, reserve %. Persists across sessions. |
 | `add_appliance` / `list_appliances` | "Remember the washing machine is 500 watts" | Appliances by name for planning. |
+| `plan_day` | "Plan my power for today" | Schedules all known appliances into the next 24 h, solar-surplus first. **Interactive planner card** — tick/untick appliances and the plan re-runs live. |
 | `log_grid_event` | "Grid just went off" | Feeds the learned per-weekday grid-availability pattern. |
+
+**Server-initiated alerts.** Each session runs a monitor (`src/alerts.ts`) that pushes MCP `notifications/message`
+over the Streamable HTTP GET stream when the battery drops within 10 points of the reserve, reaches it, or the grid
+flips — no client request needed. Grid flips are also logged into the learned pattern automatically.
 
 ## How it works
 
 ```
 Alexa+ / MCP client ──Streamable HTTP (sessions, SSE)──▶ src/http.ts
                                                           └─ src/server.ts   tools + ui:// resource
-                                                             ├─ src/forecast.ts   SOC integration, can_i_run, grid learning
+                                                             ├─ src/forecast.ts   SOC integration, can_i_run, plan_day, grid learning
+                                                             ├─ src/alerts.ts     server→client alerts on the GET SSE stream
                                                              ├─ src/store.ts      per-household state (survives sessions)
                                                              ├─ src/telemetry/    sim | victron (VRM v2) | growatt (OpenAPI v1)
                                                              ├─ src/bedrock.ts    Converse API briefing (AWS Builder)
-                                                             └─ src/ui/card.*     MCP App dashboard (Vite → single HTML)
+                                                             └─ src/ui/*.html     MCP App cards: dashboard + planner (Vite → single HTML)
 ```
 
 **Forecast engine** (`src/forecast.ts`, pure functions, tested): `net = pv + grid − load`, SOC integrated at
@@ -87,6 +94,8 @@ memory, multi-vendor telemetry, and the interactive card.
 | `DEMO_USER_ID` | `demo-household` | stand-in for authenticated identity |
 | `POWER_SOURCE` | `sim` | `sim` \| `victron` \| `growatt` |
 | `SIM_ARRAY_KW` / `SIM_BATTERY_KWH` / `SIM_SPEED` | `4.5` / `10` / `60` | simulator; speed = sim-seconds per real second |
+| `SIM_START_SOC` / `SIM_CLOCK_START` | `65` / now | simulator starting SOC and ISO clock start (for demos at "night") |
+| `ALERT_INTERVAL_MS` / `ALERT_REPEAT_MS` | `30000` / `900000` | alert poll interval; repeat while condition persists |
 | `VRM_TOKEN` / `VRM_DEMO` / `VRM_SITE_ID` | — | Victron |
 | `GROWATT_TOKEN` / `GROWATT_BASE_URL` / `GROWATT_PLANT_ID` / `GROWATT_DEVICE_SN` / `GROWATT_DEVICE_TYPE` | — | Growatt (type 5 = SPH, 7 = MIN) |
 | `AWS_REGION` / `BEDROCK_MODEL_ID` | unset = disabled | e.g. `anthropic.claude-3-5-haiku-20241022-v1:0` |
@@ -94,8 +103,8 @@ memory, multi-vendor telemetry, and the interactive card.
 ## Roadmap (hackathon window)
 
 - [x] Streamable HTTP sessions, MCP App dashboard, forecast engine, Victron + Growatt + sim adapters
-- [ ] `plan_day` interactive planner card (toggle appliances, see runtime update via `callServerTool`)
-- [ ] Server-initiated low-battery alerts over the GET SSE stream
+- [x] `plan_day` interactive planner card (toggle appliances → re-plans via `callServerTool`)
+- [x] Server-initiated low-battery / grid alerts over the GET SSE stream
 - [ ] Per-household timezone (currently Africa/Lagos)
 - [ ] Bedrock briefing enabled + documented; DynamoDB store option
 - [ ] Demo video < 3 min, product feedback, friction log

@@ -8,7 +8,7 @@ export { SimulatedSource, VictronSource, GrowattSource };
 
 /**
  * Pick the telemetry source from env:
- *   POWER_SOURCE=sim      (default)  — SIM_ARRAY_KW, SIM_BATTERY_KWH, SIM_SPEED
+ *   POWER_SOURCE=sim      (default)  — SIM_ARRAY_KW, SIM_BATTERY_KWH, SIM_SPEED, SIM_START_SOC, SIM_CLOCK_START
  *   POWER_SOURCE=victron             — VRM_TOKEN or VRM_DEMO=1, VRM_SITE_ID
  *   POWER_SOURCE=growatt             — GROWATT_TOKEN [, GROWATT_PLANT_ID, GROWATT_DEVICE_SN, GROWATT_DEVICE_TYPE]
  */
@@ -34,6 +34,8 @@ export function sourceFromEnv(env = process.env): TelemetrySource {
         arrayKw: Number(env.SIM_ARRAY_KW ?? 4.5),
         batteryKwh: Number(env.SIM_BATTERY_KWH ?? 10),
         speed: Number(env.SIM_SPEED ?? 60), // 1 real second = 1 simulated minute
+        startSoc: env.SIM_START_SOC ? Number(env.SIM_START_SOC) : undefined,
+        clockStart: env.SIM_CLOCK_START ? new Date(env.SIM_CLOCK_START) : undefined, // e.g. 2026-09-09T21:00:00Z
       });
   }
 }

@@ -9,17 +9,18 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { getHousehold, updateHousehold } from "./store.js";
-import { canRun, forecast, gridProbabilityByHour, type ForecastInput, type SystemProfile } from "./forecast.js";
+import { canRun, forecast, gridProbabilityByHour, planDay, type ForecastInput, type SystemProfile } from "./forecast.js";
 import { clearSkyPvW, typicalLoadW } from "./telemetry/simulated.js";
 import type { TelemetrySource } from "./telemetry/index.js";
 import { bedrockEnabled, summarize } from "./bedrock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CARD_URI = "ui://powerline/dashboard.html";
+const PLANNER_URI = "ui://powerline/planner.html";
 const DEFAULT_PROFILE: SystemProfile = { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 };
 
-async function loadCardHtml(): Promise<string> {
-  for (const p of [path.resolve(__dirname, "ui/card.html"), path.resolve(__dirname, "../dist/ui/card.html")]) {
+async function loadCardHtml(file = "card.html"): Promise<string> {
+  for (const p of [path.resolve(__dirname, "ui", file), path.resolve(__dirname, "../dist/ui", file)]) {
     try { return await fs.readFile(p, "utf8"); } catch { /* next */ }
   }
   throw new Error("MCP App view not built. Run `npm run build:ui`.");
@@ -31,7 +32,7 @@ export interface SessionContext { userId: string; source: TelemetrySource }
 async function buildForecastInput(ctx: SessionContext) {
   const [t, h] = await Promise.all([ctx.source.current(), getHousehold(ctx.userId)]);
   const profile = h.profile ?? DEFAULT_PROFILE;
-  const now = new Date();
+  const now = new Date(t.at); // telemetry timestamp (follows the simulator clock when SIM_CLOCK_START is set)
   const localHour = (now.getUTCHours() + 1) % 24; // Lagos UTC+1; TODO: per-household timezone
   const providerPv = (await ctx.source.pvForecast?.()) ?? null;
   const pvForecastW = providerPv ?? Array.from({ length: 24 }, (_, i) => clearSkyPvW((localHour + i) % 24, profile.arrayKw));
@@ -49,8 +50,9 @@ async function buildForecastInput(ctx: SessionContext) {
 
 export function createServer(ctx: SessionContext): McpServer {
   const server = new McpServer(
-    { name: "powerline", version: "0.2.0" },
-    { instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
+    { name: "powerline", version: "0.3.1" },
+    { capabilities: { logging: {} }, // required or sendLoggingMessage() is a silent no-op
+      instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
   );
 
   // ---- Onboarding / household memory -------------------------------------
@@ -105,7 +107,11 @@ export function createServer(ctx: SessionContext): McpServer {
     const { t, profile, input } = await buildForecastInput(ctx);
     const f = forecast(input);
     const src = t.grid_available === null ? "battery/solar" : t.grid_available ? "grid" : t.pv_w > t.load_w ? "solar" : "battery";
-    const floorMsg = f.hitsFloor ? `Battery reaches the ${profile.reserveSocPct}% reserve in about ${f.hoursToFloor!.toFixed(1)} hours.` : `Battery stays above the ${profile.reserveSocPct}% reserve for the next 24 hours.`;
+    const recovers = f.points.findIndex((p) => p.socPct > profile.reserveSocPct);
+    const floorMsg = t.soc_pct <= profile.reserveSocPct
+      ? `Battery is at or below the ${profile.reserveSocPct}% reserve now${recovers > 0 ? `; expected back above it in about ${recovers} hours` : ""}.`
+      : f.hitsFloor ? `Battery reaches the ${profile.reserveSocPct}% reserve in about ${f.hoursToFloor!.toFixed(1)} hours.`
+      : `Battery stays above the ${profile.reserveSocPct}% reserve for the next 24 hours.`;
     const text = `Solar ${t.pv_w} W, load ${t.load_w} W, battery ${t.soc_pct}% (${t.battery_w >= 0 ? "charging" : "discharging"} ${Math.abs(t.battery_w)} W), running on ${src}. ${floorMsg}`;
     return { content: [{ type: "text", text }], structuredContent: { telemetry: { ...t, raw: undefined }, profile, forecast: f.points, hoursToFloor: f.hoursToFloor, minSocPct: f.minSocPct } };
   });
@@ -146,6 +152,29 @@ export function createServer(ctx: SessionContext): McpServer {
     const text = bedrockEnabled ? await summarize(facts) : facts;
     return { content: [{ type: "text", text }], _meta: { bedrock: bedrockEnabled } };
   });
+
+  // ---- Day planner (interactive MCP App) -----------------------------------
+  registerAppTool(server, "plan_day", {
+    title: "Plan today's power",
+    description: "Schedule the household's appliances (or a supplied list) across the next 24 h so the battery never breaches its reserve, preferring solar-surplus hours. Shows an interactive planner card where appliances can be toggled and re-planned.",
+    inputSchema: z.object({
+      appliances: z.array(z.object({ name: z.string(), watts: z.number().positive(), minutes: z.number().positive() })).optional()
+        .describe("Override the stored appliance list (used by the planner card when toggling)"),
+    }),
+    _meta: { ui: { resourceUri: PLANNER_URI } },
+  }, async ({ appliances }) => {
+    const { h, profile, input, localHour, t } = await buildForecastInput(ctx);
+    const list = appliances ?? h.appliances;
+    if (list.length === 0) return { content: [{ type: "text", text: "No appliances to plan. Add some with add_appliance first." }], structuredContent: { items: [], all: h.appliances, localHour } };
+    const plan = planDay(input, list);
+    const hh = (o: number) => `${String((localHour + o) % 24).padStart(2, "0")}:00`;
+    const lines = plan.items.map((i) => i.startHour === null ? `• ${i.name}: skip today (${i.reason})` : `• ${i.name}: ${hh(i.startHour)} (${i.reason})`);
+    const text = `${lines.join("\n")}\nBattery low point ${plan.minSocPct}% (reserve ${profile.reserveSocPct}%).`;
+    return { content: [{ type: "text", text }], structuredContent: { ...plan, all: h.appliances, selected: list.map((a) => a.name), localHour, socNow: t.soc_pct, reserve: profile.reserveSocPct } };
+  });
+
+  registerAppResource(server, "Powerline planner", PLANNER_URI, { description: "Interactive appliance planner" },
+    async () => ({ contents: [{ uri: PLANNER_URI, mimeType: RESOURCE_MIME_TYPE, text: await loadCardHtml("planner.html") }] }));
 
   registerAppResource(server, "Powerline dashboard", CARD_URI, { description: "Live power dashboard with 24h battery forecast" },
     async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: await loadCardHtml() }] }));

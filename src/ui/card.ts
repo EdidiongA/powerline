@@ -39,7 +39,9 @@ function render(s: Status) {
   srcEl.textContent = `${t.source} · ${new Date(t.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   const source = t.grid_available === null ? "solar + battery" : t.grid_available ? "grid" : t.pv_w > t.load_w ? "solar" : "battery";
   const socColor = t.soc_pct <= s.profile.reserveSocPct ? "var(--bad)" : t.soc_pct < s.profile.reserveSocPct + 15 ? "var(--warn)" : "var(--ok)";
-  const floorMsg = s.hoursToFloor !== null
+  const floorMsg = t.soc_pct <= s.profile.reserveSocPct
+    ? `🔴 Battery is <b>at or below the ${s.profile.reserveSocPct}% reserve</b> now.`
+    : s.hoursToFloor !== null
     ? `⚠️ Reserve (${s.profile.reserveSocPct}%) reached in about <b>${s.hoursToFloor.toFixed(1)} h</b>.`
     : `✅ Battery stays above the ${s.profile.reserveSocPct}% reserve for 24 h (lowest ${s.minSocPct}%).`;
   root.innerHTML = `

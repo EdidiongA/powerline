@@ -1,14 +1,16 @@
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Builds src/ui/card.html into one self-contained HTML file (dist/ui/card.html)
-// so the MCP server can serve it as a ui:// resource.
+// One self-contained HTML per MCP App view. vite-plugin-singlefile only supports a
+// single entry per build, so the page is selected with UI_PAGE (see package.json).
+const page = process.env.UI_PAGE ?? "card";
+
 export default defineConfig({
   root: "src/ui",
   plugins: [viteSingleFile()],
   build: {
     outDir: "../../dist/ui",
-    emptyOutDir: true,
-    rollupOptions: { input: "src/ui/card.html" },
+    emptyOutDir: false,
+    rollupOptions: { input: `src/ui/${page}.html` },
   },
 });

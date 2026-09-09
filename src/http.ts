@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { createServer } from "./server.js";
 import { sourceFromEnv } from "./telemetry/index.js";
+import { startAlertMonitor, type AlertMonitor } from "./alerts.js";
 
 const source = sourceFromEnv(); // shared across sessions so the simulator clock is continuous
 
@@ -24,6 +25,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .filter(Boolean);
 
 const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
+const monitors = new Map<string, AlertMonitor>();
 
 function originAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // non-browser clients omit Origin
@@ -37,19 +39,23 @@ function originAllowed(origin: string | undefined): boolean {
 }
 
 async function newSession(): Promise<WebStandardStreamableHTTPServerTransport> {
+  // TODO: derive userId from auth (OAuth token / Alexa account linking).
+  const userId = process.env.DEMO_USER_ID ?? "demo-household";
+  const server = createServer({ userId, source });
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (id) => {
       sessions.set(id, transport);
+      monitors.set(id, startAlertMonitor(server, source, userId));
       console.log(`[session] opened ${id}`);
     },
     onsessionclosed: (id) => {
       sessions.delete(id);
+      monitors.get(id)?.stop();
+      monitors.delete(id);
       console.log(`[session] closed ${id}`);
     },
   });
-  // TODO: derive userId from auth (OAuth token / Alexa account linking).
-  const server = createServer({ userId: process.env.DEMO_USER_ID ?? "demo-household", source });
   await server.connect(transport);
   return transport;
 }
