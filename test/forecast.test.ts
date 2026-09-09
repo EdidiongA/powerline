@@ -87,3 +87,11 @@ test("starting at or below the reserve reports hitsFloor immediately", () => {
   assert.equal(r.hitsFloor, true);
   assert.equal(r.hoursToFloor, 0);
 });
+
+test("planDay labels a night slot covered by grid as grid, not solar", async () => {
+  const { planDay } = await import("../src/forecast.js");
+  const base = { profile, socPct: 68, pvForecastW: new Array(24).fill(0), loadForecastW: new Array(24).fill(300), gridForecast: new Array(24).fill(true) };
+  const plan = planDay(base, [{ name: "iron", watts: 2000, minutes: 30 }]);
+  assert.equal(plan.items[0].source, "grid");
+  assert.equal(plan.items[0].onSurplus, false);
+});

@@ -50,7 +50,7 @@ async function buildForecastInput(ctx: SessionContext) {
 
 export function createServer(ctx: SessionContext): McpServer {
   const server = new McpServer(
-    { name: "powerline", version: "0.3.1" },
+    { name: "powerline", version: "0.3.2" },
     { capabilities: { logging: {} }, // required or sendLoggingMessage() is a silent no-op
       instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
   );

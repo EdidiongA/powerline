@@ -155,7 +155,8 @@ export interface PlanItem {
   watts: number;
   minutes: number;
   startHour: number | null;   // offset from now; null = could not be scheduled
-  onSurplus: boolean;         // runs on PV surplus (free) vs draws from battery/grid
+  onSurplus: boolean;         // runs entirely on PV surplus (free)
+  source: "solar" | "grid" | "battery" | "none";
   reason: string;
 }
 
@@ -179,26 +180,28 @@ export function planDay(base: ForecastInput, appliances: Appliance[], horizonHou
 
   for (const a of sorted) {
     const runHours = Math.max(1, Math.ceil(a.minutes / 60));
-    let placed: { h: number; onSurplus: boolean } | null = null;
+    let placed: { h: number; onSurplus: boolean; source: "solar" | "grid" | "battery" } | null = null;
     // Pass 1: prefer slots fully on PV surplus. Pass 2: any slot that keeps SOC above floor.
     for (const wantSurplus of [true, false]) {
       for (let h = 0; h <= horizonHours - runHours; h++) {
         if (a.watts + (base.loadForecastW[h] ?? 0) > base.profile.inverterKw * 1000) continue;
         const trial = forecast({ ...base, extraLoads: [...extra, { startHour: h, watts: a.watts, minutes: a.minutes }] }, horizonHours);
-        const onSurplus = trial.points.slice(h, h + runHours).every((p) => p.batteryW >= 0);
+        const run = trial.points.slice(h, h + runHours);
+        const onSurplus = run.every((p) => p.pvW >= p.loadW);          // sun alone covers everything
+        const onGrid = !onSurplus && run.every((p) => p.gridOn);        // grid covers the shortfall
         // Keep the floor intact; if the household is already going to breach it tonight,
         // still allow appliances that run entirely on PV surplus (they cost the battery nothing).
         const ok = trial.minSocPct > floor || (baselineBreaches && onSurplus);
-        if (ok && (!wantSurplus || onSurplus)) { placed = { h, onSurplus }; break; }
+        if (ok && (!wantSurplus || onSurplus)) { placed = { h, onSurplus, source: onSurplus ? "solar" : onGrid ? "grid" : "battery" }; break; }
       }
       if (placed) break;
     }
     if (placed) {
       extra.push({ startHour: placed.h, watts: a.watts, minutes: a.minutes });
-      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: placed.h, onSurplus: placed.onSurplus,
-        reason: placed.onSurplus ? "runs on solar surplus" : "battery stays above reserve" });
+      const reason = { solar: "runs on solar surplus", grid: "runs on grid power", battery: "from battery; stays above reserve" }[placed.source];
+      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: placed.h, onSurplus: placed.onSurplus, source: placed.source, reason });
     } else {
-      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: null, onSurplus: false,
+      items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: null, onSurplus: false, source: "none",
         reason: baselineBreaches ? "no solar-surplus slot today" : `no slot keeps the battery above ${floor}% today` });
     }
   }

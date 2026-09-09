@@ -1,7 +1,7 @@
 import { App } from "@modelcontextprotocol/ext-apps";
 
 interface Appliance { name: string; watts: number; minutes: number }
-interface Item extends Appliance { startHour: number | null; onSurplus: boolean; reason: string }
+interface Item extends Appliance { startHour: number | null; onSurplus: boolean; source: "solar" | "grid" | "battery" | "none"; reason: string }
 interface Plan { items: Item[]; minSocPct: number; hitsFloor: boolean; all: Appliance[]; selected: string[]; localHour: number; socNow: number; reserve: number }
 
 const root = document.getElementById("root")!;
@@ -17,7 +17,7 @@ function render(p: Plan) {
   const rows = p.all.map((a) => {
     const it = byName.get(a.name.toLowerCase());
     const checked = p.selected.some((s) => s.toLowerCase() === a.name.toLowerCase());
-    const when = !checked ? "" : it?.startHour === null ? `<span class="tag skip">skip today</span>` : `<span class="when">${hh(p.localHour, it!.startHour!)}</span><span class="tag ${it!.onSurplus ? "sun" : ""}">${it!.onSurplus ? "☀ solar" : "battery"}</span>`;
+    const when = !checked ? "" : it?.startHour === null ? `<span class="tag skip">skip today</span>` : `<span class="when">${hh(p.localHour, it!.startHour!)}</span><span class="tag ${it!.source === "solar" ? "sun" : ""}">${{ solar: "☀ solar", grid: "⚡ grid", battery: "🔋 battery", none: "" }[it!.source]}</span>`;
     return `<label class="row"><input type="checkbox" data-name="${a.name}" ${checked ? "checked" : ""}/><span class="name">${a.name}<small>${a.watts} W · ${a.minutes} min</small></span>${when}</label>`;
   }).join("");
 
