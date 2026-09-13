@@ -126,16 +126,21 @@ export function canRun(base: ForecastInput, appliance: Appliance, horizonHours =
 /** Learn hourly grid-availability probabilities from logged on/off events (per weekday). */
 export interface GridEvent { at: string; on: boolean }
 
-export function gridProbabilityByHour(events: GridEvent[], weekday: number): number[] {
-  // Reconstruct on/off intervals from the event log, then bin by hour for the given weekday.
+/**
+ * Returns, per UTC hour, the observed probability the grid was ON on the given weekday,
+ * or null where there is less than `minMinutes` of evidence. Intervals longer than 24 h
+ * (clock jumps, gaps in logging) are ignored rather than treated as one long state.
+ */
+export function gridProbabilityByHour(events: GridEvent[], weekday: number, minMinutes = 60): Array<number | null> {
   const sorted = [...events].sort((a, b) => a.at.localeCompare(b.at));
   const onMinutes = new Array<number>(24).fill(0);
   const totMinutes = new Array<number>(24).fill(0);
-  for (let i = 0; i < sorted.length; i++) {
-    const start = new Date(sorted[i].at);
-    const end = i + 1 < sorted.length ? new Date(sorted[i + 1].at) : new Date(start.getTime() + 24 * 3.6e6);
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const start = new Date(sorted[i].at).getTime();
+    const end = new Date(sorted[i + 1].at).getTime();
+    if (end <= start || end - start > 24 * 3.6e6) continue;
     const on = sorted[i].on;
-    for (let t = start.getTime(); t < end.getTime(); t += 15 * 60 * 1000) {
+    for (let t = start; t < end; t += 15 * 60 * 1000) {
       const d = new Date(t);
       if (d.getUTCDay() !== weekday) continue;
       const h = d.getUTCHours();
@@ -143,7 +148,7 @@ export function gridProbabilityByHour(events: GridEvent[], weekday: number): num
       if (on) onMinutes[h] += 15;
     }
   }
-  return onMinutes.map((m, h) => (totMinutes[h] ? m / totMinutes[h] : 0.5));
+  return onMinutes.map((m, h) => (totMinutes[h] >= minMinutes ? m / totMinutes[h] : null));
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;

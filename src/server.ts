@@ -45,18 +45,22 @@ async function buildForecastInput(ctx: SessionContext) {
   // Load forecast: scale the typical profile so hour 0 matches what we measure right now.
   const scale = t.load_w > 0 ? t.load_w / typicalLoadW(localHour) : 1;
   const loadForecastW = Array.from({ length: 24 }, (_, i) => Math.round(typicalLoadW((localHour + i) % 24) * Math.min(2, Math.max(0.5, scale))));
-  // Grid forecast: learned probabilities if we have events, else assume current state persists 2h then unknown.
-  const probs = h.gridEvents.length >= 2 ? gridProbabilityByHour(h.gridEvents, now.getUTCDay()) : null;
-  const gridForecast = Array.from({ length: 24 }, (_, i) =>
-    probs ? probs[(now.getUTCHours() + i) % 24] >= 0.5 : i < 2 ? (t.grid_available ?? false) : null,
-  );
+  // Grid forecast: hour 0 = what we can see now; later hours from the learned per-weekday pattern
+  // where there is enough evidence; otherwise assume the current state persists ~2 h, then unknown (treated as off).
+  const probs = gridProbabilityByHour(h.gridEvents, now.getUTCDay());
+  const gridForecast = Array.from({ length: 24 }, (_, i) => {
+    if (i === 0 && t.grid_available !== null) return t.grid_available;
+    const p = probs[(now.getUTCHours() + i) % 24];
+    if (p !== null) return p >= 0.5;
+    return i < 2 ? t.grid_available : null;
+  });
   const input: ForecastInput = { profile, socPct: t.soc_pct, pvForecastW, loadForecastW, gridForecast };
   return { t, h, profile, input, localHour };
 }
 
 export function createServer(ctx: SessionContext): McpServer {
   const server = new McpServer(
-    { name: "powerline", version: "0.3.3" },
+    { name: "powerline", version: "0.3.4" },
     { capabilities: { logging: {} }, // required or sendLoggingMessage() is a silent no-op
       instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
   );

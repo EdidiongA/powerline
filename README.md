@@ -17,6 +17,7 @@ token). A built-in simulator runs without any hardware.
 npm install
 npm run build          # bundles the MCP App card + compiles the server
 npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
+npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
 npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
 npm test               # forecast-engine tests

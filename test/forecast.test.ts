@@ -58,6 +58,18 @@ test("grid probability learned from events", () => {
   assert.equal(p[2], 1);
   assert.equal(p[9], 0);
   assert.equal(p[14], 1);
+  assert.equal(p[20], null); // no evidence after the last event
+});
+
+test("grid learning ignores clock jumps and thin evidence", () => {
+  const ev = [
+    { at: "2026-09-07T01:00:00Z", on: true },
+    { at: "2026-09-07T01:30:00Z", on: false },  // only 30 min of evidence in hour 1 → null
+    { at: "2026-09-25T03:00:00Z", on: true },   // 18-day gap: must not paint hours 1..3 as OFF
+  ];
+  const p = gridProbabilityByHour(ev, 1);
+  assert.equal(p[1], null);
+  assert.equal(p[2], null);
 });
 
 test("planDay schedules heavy loads into daylight and never breaches the floor", async () => {
