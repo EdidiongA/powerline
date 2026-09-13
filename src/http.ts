@@ -11,7 +11,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
-import { createServer } from "./server.js";
+import { createServer, checkCardsBuilt } from "./server.js";
 import { sourceFromEnv } from "./telemetry/index.js";
 import { startAlertMonitor, type AlertMonitor } from "./alerts.js";
 
@@ -87,6 +87,7 @@ app.all("/mcp", async (c) => {
   return transport.handleRequest(req);
 });
 
+void checkCardsBuilt();
 serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
   console.log(`Powerline MCP endpoint: http://${HOST}:${PORT}/mcp  (telemetry: ${source.name})`);
 });

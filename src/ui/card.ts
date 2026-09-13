@@ -48,7 +48,7 @@ function render(s: Status) {
     <div class="grid">
       ${tile("Solar", fmtW(t.pv_w))}
       ${tile("Load", fmtW(t.load_w), `on ${source}`)}
-      ${tile("Battery", `${t.soc_pct}%`, `${t.battery_w >= 0 ? "▲ charging" : "▼ discharging"} ${fmtW(Math.abs(t.battery_w))}`)}
+      ${tile("Battery", `${t.soc_pct}%`, Math.abs(t.battery_w) < 5 ? "idle" : `${t.battery_w > 0 ? "▲ charging" : "▼ discharging"} ${fmtW(Math.abs(t.battery_w))}`)}
       ${tile("Grid", t.grid_available === null ? "—" : t.grid_available ? "ON" : "OFF", t.grid_w ? fmtW(t.grid_w) : "")}
     </div>
     <div class="soc"><i style="width:${t.soc_pct}%;background:${socColor}"></i><b style="left:${s.profile.reserveSocPct}%"></b></div>
@@ -58,6 +58,7 @@ function render(s: Status) {
 
 app.ontoolresult = (result) => {
   const sc = result.structuredContent as Status | undefined;
-  if (sc?.telemetry) render(sc);
+  try { if (sc?.telemetry) render(sc); }
+  catch (e) { root.innerHTML = `<div class="empty">Card error: ${(e as Error).message}</div>`; console.error(e); }
 };
 app.connect().catch((e) => { srcEl.textContent = "not connected"; console.error(e); });

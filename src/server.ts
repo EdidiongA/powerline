@@ -23,7 +23,13 @@ async function loadCardHtml(file = "card.html"): Promise<string> {
   for (const p of [path.resolve(__dirname, "ui", file), path.resolve(__dirname, "../dist/ui", file)]) {
     try { return await fs.readFile(p, "utf8"); } catch { /* next */ }
   }
-  throw new Error("MCP App view not built. Run `npm run build:ui`.");
+  console.error(`[powerline] MCP App view ${file} not found — run \`npm run build:ui\``);
+  return `<!doctype html><body style="font-family:system-ui;padding:12px;color:#d64545">Powerline card <b>${file}</b> is not built. Run <code>npm run build:ui</code> and restart the server.</body>`;
+}
+
+/** Warn at startup if the card bundles are missing, instead of failing silently at render time. */
+export async function checkCardsBuilt(): Promise<void> {
+  for (const f of ["card.html", "planner.html"]) await loadCardHtml(f);
 }
 
 export interface SessionContext { userId: string; source: TelemetrySource }
@@ -50,7 +56,7 @@ async function buildForecastInput(ctx: SessionContext) {
 
 export function createServer(ctx: SessionContext): McpServer {
   const server = new McpServer(
-    { name: "powerline", version: "0.3.2" },
+    { name: "powerline", version: "0.3.3" },
     { capabilities: { logging: {} }, // required or sendLoggingMessage() is a silent no-op
       instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
   );
@@ -164,8 +170,8 @@ export function createServer(ctx: SessionContext): McpServer {
     _meta: { ui: { resourceUri: PLANNER_URI } },
   }, async ({ appliances }) => {
     const { h, profile, input, localHour, t } = await buildForecastInput(ctx);
-    const list = appliances ?? h.appliances;
-    if (list.length === 0) return { content: [{ type: "text", text: "No appliances to plan. Add some with add_appliance first." }], structuredContent: { items: [], all: h.appliances, localHour } };
+    const list = appliances && appliances.length > 0 ? appliances : h.appliances; // [] from the model = "use stored list"
+    if (list.length === 0) return { content: [{ type: "text", text: "No appliances to plan. Add some with add_appliance first." }], structuredContent: { items: [], all: [], selected: [], localHour, minSocPct: t.soc_pct, hitsFloor: false, socNow: t.soc_pct, reserve: profile.reserveSocPct } };
     const plan = planDay(input, list);
     const hh = (o: number) => `${String((localHour + o) % 24).padStart(2, "0")}:00`;
     const lines = plan.items.map((i) => i.startHour === null ? `• ${i.name}: skip today (${i.reason})` : `• ${i.name}: ${hh(i.startHour)} (${i.reason})`);
