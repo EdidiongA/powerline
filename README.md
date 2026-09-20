@@ -20,7 +20,7 @@ npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
 npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
 npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
-npm test               # forecast-engine tests
+npm test               # forecast, cards and store — 38 tests, no AWS account needed
 ```
 
 Live telemetry:
@@ -72,6 +72,31 @@ Alexa+ / MCP client ──Streamable HTTP (sessions, SSE)──▶ src/http.ts
 next 24 h for the earliest slot that either keeps SOC above the reserve or runs entirely on PV surplus.
 Grid availability is learned from logged on/off events, binned per weekday-hour.
 
+**Cards.** Two MCP App views (`src/ui/`), designed as an instrument readout rather than a
+dashboard of tiles: the state of charge and a plain-language verdict ("holds past midnight") lead,
+a quiet three-column strip carries the live figures, and a single 24-hour ribbon shows the battery
+line against a solar field, grid bands and the reserve floor. The planner places each appliance as a
+block on the same time track. Both views are tested in jsdom against absent, partial and hostile
+payloads (`test/cards.test.ts`) — a card that throws renders as a blank box in the host, so this is
+the failure mode worth guarding.
+
+**Store.** Powerline has two writers by design — tool calls, and the per-session alert monitor
+that logs grid flips on a timer — so a read-modify-write store loses updates. The DynamoDB
+backend carries a `version` attribute and writes conditionally; on conflict the mutation is
+**re-applied to freshly read data** rather than the stale copy, and the update cycle uses a
+strongly consistent read so the version it checks is current. Throttling and 5xx are retried
+with exponential backoff and full jitter; a missing table or bad credentials fail immediately
+with the command that fixes them. Records are bounded before every write, so an item can never
+exceed DynamoDB's 400 KB limit. There is deliberately **no silent fallback to disk**: a store
+that quietly writes to two places is worse than one that says it is unavailable, so `/healthz`
+reports 503 with the reason and the server keeps serving.
+
+```bash
+npm run dynamo:init                        # create the table (on-demand billing, idempotent)
+STORE=dynamodb npm run start:aws           # run against it
+curl localhost:3000/healthz                # backend, table, region, session count
+```
+
 **Telemetry adapters** implement one interface (`src/telemetry/types.ts`) returning
 `{pv_w, load_w, battery_w, soc_pct, grid_w, grid_available}`. Adding a brand is one file.
 
@@ -91,8 +116,13 @@ memory, multi-vendor telemetry, and the interactive card.
 | --- | --- | --- |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | `HOST=0.0.0.0` behind a tunnel |
 | `ALLOWED_ORIGINS` | localhost only | comma-separated browser origins |
-| `DATA_DIR` | `./data` | household store |
+| `STORE` | `disk` | `disk` \| `dynamodb` |
+| `DATA_DIR` | `./data` | disk store location |
+| `DYNAMO_TABLE` / `DYNAMO_ENDPOINT` / `DYNAMO_MAX_ATTEMPTS` | `powerline` / – / `6` | DynamoDB store |
+| `SESSION_TTL_MS` | `1800000` | idle sessions are closed after this |
+| `TELEMETRY_TTL_MS` | `10000` | shared cache in front of the inverter API |
 | `DEMO_USER_ID` | `demo-household` | stand-in for authenticated identity |
+| `TZ_OFFSET` | `1` | household UTC offset in hours (1 = Africa/Lagos, 2 = the Victron demo site) |
 | `POWER_SOURCE` | `sim` | `sim` \| `victron` \| `growatt` |
 | `SIM_ARRAY_KW` / `SIM_BATTERY_KWH` / `SIM_SPEED` | `4.5` / `10` / `60` | simulator; speed = sim-seconds per real second |
 | `SIM_START_SOC` / `SIM_CLOCK_START` | `65` / now | simulator starting SOC and ISO clock start (for demos at "night") |

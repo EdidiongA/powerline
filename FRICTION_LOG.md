@@ -57,3 +57,40 @@ Judges award up to 10% bonus for these. Log as you go; don't reconstruct at the 
 - **Severity:** Minor.
 - **Workaround:** Run vite once per page (`UI_PAGE=card`, `UI_PAGE=planner`) via `cross-env`.
 - **Suggestion:** ext-apps templates could ship a multi-view build recipe.
+
+## 2026-09-15 — New AWS accounts cannot invoke Bedrock for up to 2 hours
+- **Task:** Call Claude on Bedrock after redeeming the hackathon credits.
+- **Steps:** Sign up → redeem $150 → Bedrock → Model catalog → submit Anthropic use-case form → playground → "hello".
+- **Expected:** A response, since the use-case form had been accepted.
+- **Actual:** `AccessDeniedException: Your account is currently being verified. Verification normally takes less than 2 hours.`
+- **Severity:** Major for a timed event — a participant who redeems credits on submission day cannot use Bedrock that day.
+- **Workaround:** Wait; it cleared within the stated window.
+- **Suggestion:** The hackathon credit email should say that new AWS accounts need verification before Bedrock calls succeed, and advise redeeming early.
+
+## 2026-09-15 — AWS "Free" account plan silently disqualifies promotional credits
+- **Task:** Create an AWS account to redeem the hackathon credits.
+- **Actual:** Sign-up offers Free vs Paid plans. The Free plan is documented as not eligible for other promotional credits and discounts, so redeeming the hackathon code there would have failed; the page itself does not say this.
+- **Severity:** Major (would have cost the whole AWS mini-challenge).
+- **Workaround:** Choose the Paid plan — still no charge while credits cover usage.
+- **Suggestion:** The credit email should state "choose the Paid account plan" for new accounts.
+
+## 2026-09-15 — IAM create-user wizard re-enables console access
+- **Task:** Create a programmatic-only IAM user for the server.
+- **Actual:** The "Provide user access to the AWS Management Console" checkbox became ticked between screens, adding a console password the user never needs and a 4th wizard step.
+- **Severity:** Minor, but it mints an unnecessary long-lived credential by default.
+- **Workaround:** Untick before Next, or disable the password afterwards via Security credentials → Manage console access.
+- **Suggestion:** Default that checkbox off when the flow began from "access key" intent.
+
+## 2026-09-15 — Bedrock and DynamoDB need separate IAM policies, and the docs for the credit path don't say so
+- **Task:** Give one IAM user the permissions Powerline needs for both AWS services.
+- **Actual:** `AmazonBedrockFullAccess` alone yields `AccessDeniedException` on the first DynamoDB call, with no indication which permission is missing until you read the error's service name.
+- **Severity:** Minor, but it costs a debugging cycle for anyone adding a second AWS service.
+- **Workaround:** Attach `AmazonDynamoDBFullAccess` as well; Powerline now turns that failure into a message naming the table and the policy to attach.
+- **Suggestion:** The AWS Builder mini-challenge guidance could list the policies a typical multi-service submission needs.
+
+## 2026-09-20 — `spawnSync npx ENOENT` on Windows
+- **Task:** Run the card render tests on the Windows laptop after they passed on Linux.
+- **Actual:** Node's `execFileSync("npx", …)` fails with ENOENT on Windows because the executable is `npx.cmd`; six tests failed, all in the harness, none in the cards.
+- **Severity:** Minor, but it makes a green suite look red on the platform most entrants use.
+- **Workaround:** Call esbuild's JS API (`buildSync`) instead of spawning a CLI.
+- **Suggestion:** None for Amazon — this is a Node-on-Windows quirk — but it belongs in the log because it cost a debugging cycle on the day I wired up AWS.

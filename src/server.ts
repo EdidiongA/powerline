@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import { getHousehold, updateHousehold } from "./store.js";
+import { getHousehold, updateHousehold } from "./store/index.js";
 import { canRun, forecast, gridProbabilityByHour, planDay, type ForecastInput, type SystemProfile } from "./forecast.js";
 import { clearSkyPvW, typicalLoadW } from "./telemetry/simulated.js";
 import type { TelemetrySource } from "./telemetry/index.js";
@@ -18,6 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CARD_URI = "ui://powerline/dashboard.html";
 const PLANNER_URI = "ui://powerline/planner.html";
 const DEFAULT_PROFILE: SystemProfile = { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 };
+/** Household UTC offset in hours (TZ_OFFSET; default +1 = Africa/Lagos). Per-household storage is the next step. */
+const TZ_OFFSET = Number.isFinite(Number(process.env.TZ_OFFSET)) ? Number(process.env.TZ_OFFSET) : 1;
 
 async function loadCardHtml(file = "card.html"): Promise<string> {
   for (const p of [path.resolve(__dirname, "ui", file), path.resolve(__dirname, "../dist/ui", file)]) {
@@ -39,7 +41,7 @@ async function buildForecastInput(ctx: SessionContext) {
   const [t, h] = await Promise.all([ctx.source.current(), getHousehold(ctx.userId)]);
   const profile = h.profile ?? DEFAULT_PROFILE;
   const now = new Date(t.at); // telemetry timestamp (follows the simulator clock when SIM_CLOCK_START is set)
-  const localHour = (now.getUTCHours() + 1) % 24; // Lagos UTC+1; TODO: per-household timezone
+  const localHour = (((now.getUTCHours() + TZ_OFFSET) % 24) + 24) % 24;
   const providerPv = (await ctx.source.pvForecast?.()) ?? null;
   const pvForecastW = providerPv ?? Array.from({ length: 24 }, (_, i) => clearSkyPvW((localHour + i) % 24, profile.arrayKw));
   // Load forecast: scale the typical profile so hour 0 matches what we measure right now.
@@ -60,7 +62,7 @@ async function buildForecastInput(ctx: SessionContext) {
 
 export function createServer(ctx: SessionContext): McpServer {
   const server = new McpServer(
-    { name: "powerline", version: "0.3.4" },
+    { name: "powerline", version: "0.3.5" },
     { capabilities: { logging: {} }, // required or sendLoggingMessage() is a silent no-op
       instructions: "Powerline is a home power copilot. It knows the household's solar array, battery, inverter and grid pattern. Use power_status for the current picture, can_i_run before recommending an appliance, and evening_briefing for a spoken summary. Ask setup_system if no profile exists." },
   );
@@ -114,7 +116,7 @@ export function createServer(ctx: SessionContext): McpServer {
     inputSchema: z.object({}),
     _meta: { ui: { resourceUri: CARD_URI } },
   }, async () => {
-    const { t, profile, input } = await buildForecastInput(ctx);
+    const { t, profile, input, localHour } = await buildForecastInput(ctx);
     const f = forecast(input);
     const src = t.grid_available === null ? "battery/solar" : t.grid_available ? "grid" : t.pv_w > t.load_w ? "solar" : "battery";
     const recovers = f.points.findIndex((p) => p.socPct > profile.reserveSocPct);
@@ -123,7 +125,7 @@ export function createServer(ctx: SessionContext): McpServer {
       : f.hitsFloor ? `Battery reaches the ${profile.reserveSocPct}% reserve in about ${f.hoursToFloor!.toFixed(1)} hours.`
       : `Battery stays above the ${profile.reserveSocPct}% reserve for the next 24 hours.`;
     const text = `Solar ${t.pv_w} W, load ${t.load_w} W, battery ${t.soc_pct}% (${t.battery_w >= 0 ? "charging" : "discharging"} ${Math.abs(t.battery_w)} W), running on ${src}. ${floorMsg}`;
-    return { content: [{ type: "text", text }], structuredContent: { telemetry: { ...t, raw: undefined }, profile, forecast: f.points, hoursToFloor: f.hoursToFloor, minSocPct: f.minSocPct } };
+    return { content: [{ type: "text", text }], structuredContent: { telemetry: { ...t, raw: undefined }, profile, forecast: f.points, hoursToFloor: f.hoursToFloor, minSocPct: f.minSocPct, localHour, tzOffset: TZ_OFFSET } };
   });
 
   // ---- Decision tools ------------------------------------------------------
@@ -180,7 +182,8 @@ export function createServer(ctx: SessionContext): McpServer {
     const hh = (o: number) => `${String((localHour + o) % 24).padStart(2, "0")}:00`;
     const lines = plan.items.map((i) => i.startHour === null ? `• ${i.name}: skip today (${i.reason})` : `• ${i.name}: ${hh(i.startHour)} (${i.reason})`);
     const text = `${lines.join("\n")}\nBattery low point ${plan.minSocPct}% (reserve ${profile.reserveSocPct}%).`;
-    return { content: [{ type: "text", text }], structuredContent: { ...plan, all: h.appliances, selected: list.map((a) => a.name), localHour, socNow: t.soc_pct, reserve: profile.reserveSocPct } };
+    const sunHours = input.pvForecastW.map((w, i) => (w > input.loadForecastW[i] ? i : -1)).filter((i) => i >= 0);
+    return { content: [{ type: "text", text }], structuredContent: { ...plan, all: h.appliances, selected: list.map((a) => a.name), localHour, socNow: t.soc_pct, reserve: profile.reserveSocPct, sunHours } };
   });
 
   registerAppResource(server, "Powerline planner", PLANNER_URI, { description: "Interactive appliance planner" },

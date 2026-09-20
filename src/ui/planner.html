@@ -2,34 +2,69 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Powerline planner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Powerline — plan</title>
     <style>
-      :root { font-family: system-ui, -apple-system, sans-serif; color-scheme: light dark; --ok:#2e9e6a; --warn:#d99a1a; --bad:#d64545; --muted:rgba(127,127,127,.7); --box:rgba(127,127,127,.12); }
-      body { margin:0; padding:12px; background:transparent; }
-      h2 { margin:0 0 4px; font-size:15px; }
-      .sub { font-size:12px; color:var(--muted); margin-bottom:10px; }
-      .row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; background:var(--box); margin-bottom:6px; }
-      .row input { width:18px; height:18px; }
-      .name { flex:1; font-weight:600; }
-      .name small { display:block; font-weight:400; font-size:11px; color:var(--muted); }
-      .when { font-variant-numeric:tabular-nums; font-weight:650; min-width:52px; text-align:right; }
-      .tag { font-size:11px; padding:2px 7px; border-radius:99px; background:var(--box); color:var(--muted); }
-      .tag.sun { background:rgba(242,182,50,.25); color:inherit; }
-      .tag.skip { background:rgba(214,69,69,.18); color:inherit; }
-      .foot { display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:13px; }
-      .busy { opacity:.5; pointer-events:none; }
-      .timeline { display:grid; grid-template-columns:repeat(24,1fr); gap:2px; margin:10px 0 4px; }
-      .timeline > i { height:8px; border-radius:2px; background:var(--box); }
-      .timeline > i.sun { background:rgba(242,182,50,.55); }
-      .timeline > i.on { background:var(--ok); }
-      .ticks { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); }
-      .empty { color:var(--muted); font-size:13px; }
+      :root {
+        --ink: #16202a; --ink-2: #47566a; --ink-3: #8394a8;
+        --charge: #1e9e5a; --sun: #e8a33d; --grid: #4b7bb8; --alarm: #c8452f;
+        --rule: rgba(22, 32, 42, .14); --field: rgba(22, 32, 42, .05); --hover: rgba(22, 32, 42, .035);
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #6c7e93;
+                --rule: rgba(231,237,244,.16); --field: rgba(231,237,244,.06); --hover: rgba(231,237,244,.05); }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 14px 14px 12px; background: transparent; color: var(--ink);
+             font-family: var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+      .frame { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; position: relative; }
+      .frame.busy { opacity: .55; }
+      .frame.busy::after { content: ""; position: absolute; inset: 0; cursor: progress; }
+
+      .head { padding: 14px 16px 12px; }
+      .head h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+      .head p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+      /* Day ribbon: where the appliances actually land */
+      .day { padding: 0 16px 14px; }
+      .track { position: relative; height: 30px; background: var(--field); border-radius: 2px; overflow: hidden; }
+      .track > .sun { position: absolute; top: 0; bottom: 0; background: var(--sun); opacity: .18; }
+      .track > .slot { position: absolute; top: 4px; bottom: 4px; border-radius: 2px; min-width: 3px;
+                       transition: left .45s cubic-bezier(.2,.7,.3,1), width .45s cubic-bezier(.2,.7,.3,1), opacity .25s; }
+      .axis { display: flex; justify-content: space-between; margin-top: 5px; font-size: 10.5px; color: var(--ink-3); }
+
+      /* Schedule rows */
+      .rows { border-top: 1px solid var(--rule); }
+      .row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer;
+             border-bottom: 1px solid var(--rule); user-select: none; }
+      .row:last-child { border-bottom: 0; }
+      .row:hover { background: var(--hover); }
+      .row:focus-within { outline: 2px solid var(--grid); outline-offset: -2px; }
+      .row input { appearance: none; width: 17px; height: 17px; flex: none; margin: 0; cursor: pointer;
+                   border: 1.5px solid var(--ink-3); border-radius: 3px; position: relative; }
+      .row input:checked { background: var(--charge); border-color: var(--charge); }
+      .row input:checked::after { content: ""; position: absolute; left: 5px; top: 1.5px; width: 4px; height: 9px;
+                   border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg); }
+      .name { flex: 1; min-width: 0; }
+      .name b { display: block; font-size: 14px; font-weight: 550; letter-spacing: -.005em; }
+      .name i { font-style: normal; font-size: 11.5px; color: var(--ink-3); }
+      .when { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+      .when.off { font-size: 12.5px; font-weight: 400; color: var(--ink-3); }
+      .src { font-size: 11px; color: var(--ink-2); width: 58px; text-align: right; flex: none; }
+      .row.unpicked .name b, .row.unpicked .name i { color: var(--ink-3); }
+
+      .foot { display: flex; justify-content: space-between; align-items: baseline;
+              padding: 11px 16px 12px; border-top: 1px solid var(--rule); font-size: 12.5px; }
+      .foot .low { font-weight: 550; }
+      .placeholder { padding: 22px 16px; color: var(--ink-3); font-size: 13px; }
+      .status { margin-top: 8px; font-size: 10.5px; color: var(--ink-3); min-height: 13px; }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
   </head>
   <body>
-    <h2>Today's power plan</h2>
-    <div class="sub" id="sub">Tick the appliances you want to run; the plan updates live.</div>
-    <div id="root"><div class="empty">Waiting for plan_day…</div></div>
+    <div class="frame" id="root"><div class="placeholder">Working out today's plan…</div></div>
+    <div class="status" id="status"></div>
     <script type="module" src="./planner.ts"></script>
   </body>
 </html>

@@ -41,11 +41,26 @@ Powerline is a self-hosted **MCP server over Streamable HTTP (spec 2025-11-25)**
 - **MCP Apps:** `@modelcontextprotocol/ext-apps` v2. Two `ui://` resources (dashboard, planner) built with Vite into single-file HTML; the planner calls back into the server with `callServerTool` when the user toggles an appliance.
 - **Forecast engine:** pure TypeScript, no I/O. `net = pv + grid − load`, SOC integrated at 15-minute steps and clamped; the grid covers deficits only when the learned pattern says it is available. `can_i_run` and `plan_day` re-run the forecast with the appliance added and search for harmless slots. **11 tests**, including property-style tests for SOC bounds and monotonicity.
 - **Alerts:** background monitor per session using `sendLoggingMessage`, with hysteresis and a repeat cadence (because the transport silently drops notifications when no GET stream is open).
-- **State:** disk-backed JSON store today; interface is one file away from DynamoDB.
-- **AWS:** Bedrock Converse API for the briefing **[fill: model id, region]**; **[fill if used: Kiro / AgentCore]**.
+- **State:** one store interface, two backends — disk for zero-setup, **Amazon DynamoDB** for the
+  real thing, with optimistic concurrency so the alert monitor and tool calls cannot lose each
+  other's writes.
+- **AWS:** **Bedrock** (Converse API, Claude Haiku) generates the spoken evening briefing;
+  **DynamoDB** stores household state with conditional writes on a `version` attribute. Two
+  services in one pipeline rather than a single model call.
 - **Tooling:** Claude Code + the Amazon Devices Builder Tools MCP server for scaffolding and docs search; MCPJam Inspector as the MCP Apps host for development.
 
 ### Challenges I ran into
+
+- **Two writers, one record.** Powerline writes household state from tool calls *and* from a
+  background monitor that logs grid flips on a timer. The obvious DynamoDB implementation —
+  read, modify, write — silently drops one of them. The fix is a `version` attribute with a
+  conditional write, and on conflict re-applying the mutation to freshly read data. I proved it
+  with a fake DynamoDB that actually enforces the condition, because a concurrency test against
+  a fake that ignores conditions proves nothing.
+- **Failure modes that only appear after an hour.** A client that closes its tab never sends
+  DELETE, so its alert monitor polls forever; several of those exhaust the Victron API's rolling
+  request limit mid-demo. Idle sessions are now reaped, and telemetry is shared and cached so
+  upstream load is independent of session count.
 
 - **SDK generation gap.** The TypeScript SDK split into v2 packages (`@modelcontextprotocol/server`, `core`, `client`) and MCP Apps 2.0 targets them, but most tutorials and the hackathon resources still reference `@modelcontextprotocol/sdk` v1. The two don't interoperate; I lost half a day before switching.
 - **Silent failure modes in the transport.** `sendLoggingMessage()` resolves successfully and sends nothing unless the server declares the `logging` capability; notifications sent before the client opens its GET stream are dropped without error. Both are now documented in my friction log with suggested fixes.
@@ -71,7 +86,7 @@ Powerline is a self-hosted **MCP server over Streamable HTTP (spec 2025-11-25)**
 ### What's next
 
 - Alexa account linking → per-household identity instead of `DEMO_USER_ID`; per-household timezone.
-- Replace the disk store with DynamoDB; host the server on AgentCore. **[verify]**
+- Host the server on AgentCore; DynamoDB is already the store. **[verify]**
 - Provider PV forecasts (VRM exposes one) blended with the clear-sky model; weather-aware cloud derating.
 - More adapters via the one-file interface: Deye/Solarman, SolarEdge, Enphase.
 - Appliance auto-discovery from smart plugs; "turn it off for me" via Alexa smart-home routines.

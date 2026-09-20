@@ -13,7 +13,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { TelemetrySource } from "./telemetry/index.js";
-import { getHousehold, updateHousehold } from "./store.js";
+import { getHousehold, updateHousehold } from "./store/index.js";
 
 export interface AlertMonitor { stop(): void }
 
@@ -50,7 +50,12 @@ export function startAlertMonitor(
       }
 
       if (lastGrid !== undefined && t.grid_available !== null && t.grid_available !== lastGrid) {
-        await updateHousehold(userId, (hh) => { hh.gridEvents.push({ at: t.at, on: t.grid_available! }); });
+        // Every open session runs a monitor and each will independently notice the same
+        // flip, so the write must be idempotent: only record a change of state.
+        await updateHousehold(userId, (hh) => {
+          const previous = hh.gridEvents[hh.gridEvents.length - 1];
+          if (!previous || previous.on !== t.grid_available) hh.gridEvents.push({ at: t.at, on: t.grid_available! });
+        });
         await notify("grid", t.grid_available ? "Grid power is back." : "Grid power just went off — running on solar and battery.", { on: t.grid_available });
       }
       lastGrid = t.grid_available;

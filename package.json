@@ -1,6 +1,6 @@
 {
   "name": "powerline",
-  "version": "0.3.4",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Powerline \u2014 Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
@@ -13,10 +13,13 @@
     "start": "node dist/http.js",
     "smoke": "tsx scripts/smoke.ts",
     "test": "tsx --test test/*.test.ts",
-    "start:aws": "node --env-file=.env dist/http.js"
+    "start:aws": "node --env-file=.env dist/http.js",
+    "dynamo:init": "tsx scripts/dynamo-init.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1128.0",
+    "@aws-sdk/client-dynamodb": "^3.1133.0",
+    "@aws-sdk/lib-dynamodb": "^3.1133.0",
     "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
@@ -24,8 +27,11 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22",
     "cross-env": "^10.1.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
     "tsx": "^4",
     "typescript": "^5",
     "vite": "^6",

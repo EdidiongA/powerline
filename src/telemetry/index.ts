@@ -1,10 +1,11 @@
+import { CachedSource } from "./cached.js";
 import { SimulatedSource } from "./simulated.js";
 import { VictronSource } from "./victron.js";
 import { GrowattSource } from "./growatt.js";
 import type { TelemetrySource } from "./types.js";
 
 export type { Telemetry, TelemetrySource } from "./types.js";
-export { SimulatedSource, VictronSource, GrowattSource };
+export { SimulatedSource, VictronSource, GrowattSource, CachedSource };
 
 /**
  * Pick the telemetry source from env:
@@ -13,6 +14,13 @@ export { SimulatedSource, VictronSource, GrowattSource };
  *   POWER_SOURCE=growatt             — GROWATT_TOKEN [, GROWATT_PLANT_ID, GROWATT_DEVICE_SN, GROWATT_DEVICE_TYPE]
  */
 export function sourceFromEnv(env = process.env): TelemetrySource {
+  // Wrapped so upstream load stays flat as sessions come and go (see CachedSource).
+  // The simulator is exempt: it is free to call and its clock should advance smoothly.
+  const inner = buildSource(env);
+  return inner.name === "simulated" ? inner : new CachedSource(inner);
+}
+
+function buildSource(env: NodeJS.ProcessEnv): TelemetrySource {
   switch ((env.POWER_SOURCE ?? "sim").toLowerCase()) {
     case "victron":
       return new VictronSource({

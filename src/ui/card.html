@@ -2,31 +2,63 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Powerline</title>
     <style>
-      :root { font-family: system-ui, -apple-system, sans-serif; color-scheme: light dark; --ok:#2e9e6a; --warn:#d99a1a; --bad:#d64545; --muted:rgba(127,127,127,.7); --box:rgba(127,127,127,.12); }
-      body { margin:0; padding:12px; background:transparent; }
-      .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
-      .head h2 { margin:0; font-size:15px; }
-      .head .src { font-size:11px; color:var(--muted); }
-      .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px; }
-      .tile { background:var(--box); border-radius:10px; padding:10px 10px 8px; }
-      .tile .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-      .tile .v { font-size:20px; font-weight:650; margin-top:2px; }
-      .tile .s { font-size:11px; color:var(--muted); }
-      .soc { position:relative; height:10px; background:var(--box); border-radius:6px; overflow:hidden; margin:6px 0 4px; }
-      .soc > i { position:absolute; left:0; top:0; bottom:0; background:var(--ok); border-radius:6px; }
-      .soc > b { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--bad); }
-      .msg { font-size:13px; margin:8px 0 6px; }
-      svg { width:100%; height:auto; display:block; }
-      .fc { background:var(--box); border-radius:10px; padding:8px; }
-      .fc .l { font-size:11px; color:var(--muted); margin-bottom:4px; }
-      .empty { color:var(--muted); font-size:13px; }
+      :root {
+        --ink: #16202a; --ink-2: #47566a; --ink-3: #8394a8;
+        --charge: #1e9e5a; --sun: #e8a33d; --grid: #4b7bb8; --alarm: #c8452f;
+        --rule: rgba(22, 32, 42, .14); --field: rgba(22, 32, 42, .05);
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #6c7e93;
+                --rule: rgba(231, 237, 244, .16); --field: rgba(231, 237, 244, .06); }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 14px 14px 12px; background: transparent; color: var(--ink);
+             font-family: var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+      .frame { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+
+      /* Hero: charge + verdict */
+      .hero { display: flex; align-items: baseline; gap: 14px; padding: 16px 16px 12px; }
+      .charge { font-size: 54px; line-height: .86; font-weight: 600; letter-spacing: -.035em; }
+      .charge span { font-size: 22px; font-weight: 500; letter-spacing: -.01em; margin-left: 1px; }
+      .verdict { flex: 1; min-width: 0; }
+      .verdict b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; }
+      .verdict i { display: block; font-style: normal; font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
+      .flow { font-size: 12px; color: var(--ink-2); white-space: nowrap; align-self: center; }
+
+      /* Charge bar with reserve notch */
+      .bar { position: relative; height: 6px; margin: 0 16px 16px; background: var(--field); border-radius: 1px; }
+      .bar > u { position: absolute; inset: 0 auto 0 0; border-radius: 1px; background: var(--charge); transition: width .5s cubic-bezier(.2,.7,.3,1); }
+      .bar > s { position: absolute; top: -4px; bottom: -4px; width: 1.5px; background: var(--alarm); }
+
+      /* Readout strip */
+      .strip { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule); }
+      .strip > div { padding: 10px 14px 11px; }
+      .strip > div + div { border-left: 1px solid var(--rule); }
+      .strip dt { font-size: 11.5px; color: var(--ink-3); margin: 0 0 2px; }
+      .strip dd { margin: 0; font-size: 17px; font-weight: 550; letter-spacing: -.015em; }
+      .strip dd em { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 3px; }
+
+      /* 24h ribbon — the one bold element */
+      .ribbon { border-top: 1px solid var(--rule); padding: 13px 16px 11px; }
+      .ribbon h2 { margin: 0 0 9px; font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
+      svg { display: block; width: 100%; height: auto; }
+      .axis { display: flex; justify-content: space-between; margin-top: 5px; font-size: 10.5px; color: var(--ink-3); }
+
+      .legend { display: flex; gap: 13px; margin-top: 9px; font-size: 10.5px; color: var(--ink-3); }
+      .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin-right: 4px; vertical-align: -1px; }
+
+      .placeholder { padding: 22px 16px; color: var(--ink-3); font-size: 13px; }
+      .meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 10.5px; color: var(--ink-3); }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
   </head>
   <body>
-    <div class="head"><h2>Powerline</h2><span class="src" id="src">connecting…</span></div>
-    <div id="root"><div class="empty">Waiting for power_status…</div></div>
+    <div class="frame" id="root"><div class="placeholder">Reading the inverter…</div></div>
+    <div class="meta"><span id="src"></span><span id="ts"></span></div>
     <script type="module" src="./card.ts"></script>
   </body>
 </html>
