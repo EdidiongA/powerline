@@ -78,7 +78,7 @@ else
     --execution-role-arn "$exec_role" \
     --infrastructure-role-arn "$infra_role" \
     $( [[ -n "$TASK_ROLE_ARN" ]] && printf -- '--task-role-arn %s' "$TASK_ROLE_ARN" ) \
-    --cpu 1 --memory 2 --cpu-architecture X86_64 \
+    --cpu 1024 --memory 2048 --cpu-architecture X86_64 \
     --health-check-path /healthz \
     --scaling-target '{"minTaskCount":1,"maxTaskCount":1}' \
     --monitor-resources \
