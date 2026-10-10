@@ -225,3 +225,47 @@ test("dynamo read cache is bypassed by the update cycle", async () => {
   assert.equal(fake.calls.filter((c) => c.type === "get" && c.input.ConsistentRead).length, 1, "update read went to the service");
   assert.equal((await s.get("home")).appliances.length, 1, "cache refreshed after write");
 });
+
+test("armed plan round-trips and malformed items are dropped", async () => {
+  const s = new DiskStore(tmp());
+  await s.update("h", (h) => {
+    h.armedPlan = { armedAt: "2026-10-01T19:00:00Z", items: [
+      { name: "iron", watts: 2000, minutes: 30, startAt: "2026-10-02T09:00:00Z", source: "solar" },
+      { name: "bad", watts: 1, minutes: 1, startAt: "not-a-date", source: "grid" } as any,
+    ] };
+  });
+  const h = await s.get("h");
+  assert.equal(h.armedPlan?.items.length, 1);
+  await s.update("h", (x) => { x.armedPlan = { armedAt: "x", items: [] }; });
+  assert.equal((await s.get("h")).armedPlan, null, "an empty armed plan collapses to null");
+});
+
+test("a hand-edited or legacy store file cannot crash a read: records are sanitised on the way in", async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = (await import("node:path")).default;
+  const dir = mkdtempSync(path.join(tmpdir(), "pl-corrupt-"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "store.json"), JSON.stringify({
+    legacy: { profile: { arrayKw: "4.5", batteryKwh: 10 }, appliances: [{ name: 5 }, { name: "ok", watts: 100, minutes: 10 }], gridEvents: [{ at: "garbage", on: true }, { at: "2026-10-01T00:00:00Z", on: "yes" }] },
+    broken: { samples: [{ at: "not a date", pv_w: 1 }, { at: "2026-10-01T05:00:00Z", pv_w: NaN, load_w: 1, soc_pct: 50 }, { at: "2026-10-01T06:30:00Z", pv_w: 10, load_w: 20, soc_pct: 55, grid_on: "maybe" }], tariff: { currency: 42, perKwh: -1 }, version: "x", updatedAt: null },
+    notanobject: 7,
+  }));
+  const { DiskStore } = await import("../src/store/disk.js");
+  const store = new DiskStore(dir);
+  const legacy = await store.get("legacy");
+  assert.equal(legacy.profile, null, "a profile with a string field is dropped, not trusted");
+  assert.deepEqual(legacy.appliances.map((a) => a.name), ["ok"]);
+  assert.deepEqual(legacy.gridEvents, []);
+  assert.deepEqual(legacy.samples, []);
+  const broken = await store.get("broken");
+  assert.deepEqual(broken.samples, [{ at: "2026-10-01T06:00:00.000Z", pv_w: 10, load_w: 20, soc_pct: 55, grid_on: null }]);
+  assert.equal(broken.tariff, null);
+  assert.equal(broken.version, 0);
+  assert.equal(typeof broken.updatedAt, "string");
+  const nope = await store.get("notanobject");
+  assert.deepEqual(nope.appliances, []);
+  // And a write through the same record keeps working.
+  const after = await store.update("broken", (h) => { h.appliances.push({ name: "pump", watts: 1, minutes: 1 }); });
+  assert.equal(after.version, 1);
+});

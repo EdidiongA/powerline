@@ -1,33 +1,44 @@
 /**
  * Amazon Bedrock hook — AWS Builder mini-challenge.
  *
- * Disabled unless BEDROCK_MODEL_ID is set, so the server runs with zero AWS
- * setup. When enabled, uses the Bedrock Converse API via the AWS SDK.
+ * Disabled unless BEDROCK_MODEL_ID is set, so the server runs with zero AWS setup.
+ * When enabled, phrases the briefing through the Bedrock Converse API:
  *
- *   npm install @aws-sdk/client-bedrock-runtime
- *   export AWS_REGION=us-east-1
- *   export BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0   # or any Converse-capable model
+ *   AWS_REGION=us-east-1
+ *   BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0   # any Converse-capable model or inference profile
  *
- * Document this usage in your Product Feedback answer for the mini-challenge.
+ * The facts are computed by the forecast engine; the model only phrases them. It is told
+ * not to add numbers of its own, and the caller falls back to the plain facts if it fails.
  */
+import type { BedrockRuntimeClient as BedrockClient } from "@aws-sdk/client-bedrock-runtime";
 
 const MODEL_ID = process.env.BEDROCK_MODEL_ID;
+const TIMEOUT_MS = Number(process.env.BEDROCK_TIMEOUT_MS ?? 15_000);
 
 export const bedrockEnabled = Boolean(MODEL_ID);
 
+const SYSTEM = [
+  "You are Powerline, a home power copilot speaking through a voice assistant.",
+  "Turn the facts you are given into one short spoken paragraph (two to four sentences) a household can act on tonight.",
+  "Use only the numbers provided; never invent or round them differently. Lead with whether the battery will hold.",
+  "If the reserve will be reached, say when and what to switch off. Warm, plain, no lists, no headings, no emojis.",
+].join(" ");
+
+let client: BedrockClient | null = null;
+
 export async function summarize(text: string): Promise<string> {
-  if (!MODEL_ID) {
-    return `[bedrock disabled] ${text.slice(0, 200)}`;
-  }
-  // Lazy import so the dependency is optional.
+  if (!MODEL_ID) return `[bedrock disabled] ${text.slice(0, 200)}`;
+  // Lazy import so the SDK is loaded only when the feature is on; one client for the process.
   const { BedrockRuntimeClient, ConverseCommand } = await import("@aws-sdk/client-bedrock-runtime");
-  const client = new BedrockRuntimeClient({});
+  client ??= new BedrockRuntimeClient({});
   const res = await client.send(
     new ConverseCommand({
       modelId: MODEL_ID,
-      messages: [{ role: "user", content: [{ text: `Summarize in one sentence for a voice assistant:\n\n${text}` }] }],
-      inferenceConfig: { maxTokens: 200 },
+      system: [{ text: SYSTEM }],
+      messages: [{ role: "user", content: [{ text: `Facts:\n${text}` }] }],
+      inferenceConfig: { maxTokens: 220, temperature: 0.4 },
     }),
+    { abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
   );
   const block = res.output?.message?.content?.[0];
   return block && "text" in block && block.text ? block.text : "";

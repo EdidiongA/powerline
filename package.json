@@ -1,12 +1,12 @@
 {
   "name": "powerline",
-  "version": "0.5.1",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
-  "description": "Powerline \u2014 Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
+  "description": "Powerline — Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
   "license": "MIT",
   "scripts": {
-    "build:ui": "cross-env UI_PAGE=card vite build && cross-env UI_PAGE=planner vite build",
+    "build:ui": "cross-env UI_PAGE=card vite build && cross-env UI_PAGE=planner vite build && cross-env UI_PAGE=report vite build && cross-env UI_PAGE=demo vite build",
     "build:server": "tsc -p tsconfig.json",
     "build": "npm run build:ui && npm run build:server",
     "dev": "npm run build:ui && tsx watch src/http.ts",
@@ -14,7 +14,9 @@
     "smoke": "tsx scripts/smoke.ts",
     "test": "tsx --test test/*.test.ts",
     "start:aws": "node --env-file=.env dist/http.js",
-    "dynamo:init": "tsx scripts/dynamo-init.ts"
+    "dynamo:init": "tsx scripts/dynamo-init.ts",
+    "seed:history": "tsx src/seed-history.ts",
+    "check:browser": "node scripts/browser-check.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1128.0",
@@ -27,11 +29,13 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
+    "playwright": "^1.64.0",
     "tsx": "^4",
     "typescript": "^5",
     "vite": "^6",

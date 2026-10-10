@@ -21,7 +21,7 @@
  * Setup:  npm run dynamo:init     (creates the table, on-demand billing)
  * Enable: STORE=dynamodb  DYNAMO_TABLE=powerline  AWS_REGION=us-east-1
  */
-import { clone, emptyHousehold, normalize, StoreConfigError, StoreConflictError, type Household, type StoreBackend, type StoreHealth } from "./types.js";
+import { clone, emptyHousehold, normalize, sanitize, StoreConfigError, StoreConflictError, type Household, type StoreBackend, type StoreHealth } from "./types.js";
 
 /** Minimal shape of the document client, so tests can substitute a fake. */
 export interface DocClientLike { send(command: unknown): Promise<any> }
@@ -165,10 +165,14 @@ export class DynamoStore implements StoreBackend {
           profile: (item.profile as Household["profile"]) ?? null,
           appliances: (item.appliances as Household["appliances"]) ?? [],
           gridEvents: (item.gridEvents as Household["gridEvents"]) ?? [],
+          armedPlan: (item.armedPlan as Household["armedPlan"]) ?? null,
+          samples: (item.samples as Household["samples"]) ?? [],
+          tariff: (item.tariff as Household["tariff"]) ?? null,
           updatedAt: (item.updatedAt as string) ?? new Date().toISOString(),
           version: typeof item.version === "number" ? item.version : 0,
         }
       : emptyHousehold();
+    sanitize(value);
     this.cache.set(id, { at: Date.now(), value: clone(value) });
     return value;
   }

@@ -1,0 +1,6 @@
+{ "data": { "mix_sn": "ZT00100001", "dataloggerSn": "CRAZT00001", "time": "2026-09-25 22:41:10",
+  "ppv": 0, "ppv1": 0, "ppv2": 0, "pac": 0,
+  "pLocalLoad": 412.0, "pacToUserTotal": 412.0, "pacToGridTotal": 0.0,
+  "pcharge1": 0.0, "pdischarge1": 0.0, "soc": 61, "vac1": 228.9, "fac": 49.98,
+  "vbat": 50.9, "status": 5, "statusText": "Bypass" },
+  "error_code": 0, "error_msg": "" }

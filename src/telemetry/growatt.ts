@@ -14,8 +14,9 @@ import type { Telemetry, TelemetrySource } from "./types.js";
  *
  * Field names in the last_data payload vary by model/firmware; the mapping below
  * tries the common ones and keeps `raw` so unknown layouts can be inspected.
- * NOTE: implemented from API docs + community libraries; verify against a live unit
- * and record any mismatches in FRICTION_LOG.md.
+ * Tested against recorded payloads for both device families (test/fixtures/growatt/*.json),
+ * taken from the shapes documented by Growatt's OpenAPI v1 and the PyPi_GrowattServer
+ * community library. Not yet verified against a live unit — see FRICTION_LOG.md.
  */
 export interface GrowattOptions {
   token: string;
@@ -23,6 +24,8 @@ export interface GrowattOptions {
   plantId?: string;
   deviceSn?: string;
   deviceType?: 5 | 7;
+  /** Test seam: replaces global fetch so recorded payloads can be replayed. */
+  fetch?: typeof fetch;
 }
 
 type Json = Record<string, unknown>;
@@ -40,10 +43,11 @@ export class GrowattSource implements TelemetrySource {
   private async call(path: string, init: { method?: string; body?: URLSearchParams; query?: Record<string, string> } = {}): Promise<Json> {
     const url = new URL(`${this.base}/${path}`);
     for (const [k, v] of Object.entries(init.query ?? {})) url.searchParams.set(k, v);
-    const r = await fetch(url, {
+    const r = await (this.opts.fetch ?? fetch)(url, {
       method: init.method ?? "GET",
       headers: { token: this.opts.token, ...(init.body ? { "content-type": "application/x-www-form-urlencoded" } : {}) },
       body: init.body,
+      signal: AbortSignal.timeout(10_000), // a hung upstream must not hang a tool call
     });
     const j = (await r.json()) as { error_code: number; error_msg?: string; data?: Json };
     if (j.error_code !== 0) throw new Error(`Growatt error ${j.error_code}: ${j.error_msg}`);
@@ -97,7 +101,8 @@ export class GrowattSource implements TelemetrySource {
         battery_w: Math.round(charge - discharge),
         soc_pct: num("soc", "SOC", "capacity") ?? 0,
         grid_w: Math.round(grid),
-        grid_available: num("vac1", "vAc1") !== null ? (num("vac1", "vAc1") ?? 0) > 100 : null,
+        // vac1 is the surest signal; when a model omits it, any import from grid proves it is present.
+        grid_available: num("vac1", "vAc1") !== null ? (num("vac1", "vAc1") ?? 0) > 100 : toUser > 0 ? true : null,
         source: this.name,
         raw: d,
       };

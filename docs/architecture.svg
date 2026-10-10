@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+  <style>
+    .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; rx: 6; }
+    .core { fill: #eaf7ef; stroke: #1e9e5a; stroke-width: 1.2; }
+    .ext { fill: #fff; stroke: #d0d7de; stroke-dasharray: 4 3; }
+    .t { fill: #1f2328; }
+    .m { fill: #57606a; font-size: 11.5px; }
+    .h { fill: #1f2328; font-weight: 600; }
+    .arrow { stroke: #57606a; stroke-width: 1.4; fill: none; marker-end: url(#a); }
+    .back { stroke: #1e9e5a; stroke-width: 1.4; fill: none; marker-end: url(#g); stroke-dasharray: 5 3; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #161b22; stroke: #30363d; } .core { fill: #12261a; stroke: #2fbf72; } .ext { fill: #0d1117; stroke: #30363d; }
+      .t, .h { fill: #e6edf3; } .m { fill: #8b949e; } .arrow { stroke: #8b949e; } .back { stroke: #2fbf72; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#57606a"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1e9e5a"/></marker>
+  </defs>
+
+  <!-- Host -->
+  <rect class="box ext" x="20" y="150" width="170" height="120" rx="6"/>
+  <text class="h" x="105" y="178" text-anchor="middle">MCP host</text>
+  <text class="m" x="105" y="198" text-anchor="middle">Alexa+ · /demo host · MCPJam</text>
+  <text class="m" x="105" y="216" text-anchor="middle">renders MCP App cards</text>
+  <text class="m" x="105" y="234" text-anchor="middle">receives notifications</text>
+  <text class="m" x="105" y="252" text-anchor="middle">prompts · Agent Skill</text>
+
+  <!-- Transport -->
+  <rect class="box core" x="250" y="40" width="230" height="340" rx="8"/>
+  <text class="h" x="365" y="66" text-anchor="middle">Powerline · src/http.ts</text>
+  <text class="m" x="365" y="84" text-anchor="middle">Streamable HTTP · spec 2025-11-25</text>
+  <rect class="box" x="266" y="100" width="198" height="52"/>
+  <text class="t" x="276" y="120">POST /mcp → JSON-RPC / SSE</text>
+  <text class="m" x="276" y="138">GET → server stream · DELETE</text>
+  <rect class="box" x="266" y="162" width="198" height="52"/>
+  <text class="t" x="276" y="182">auth.ts · bearer → household</text>
+  <text class="m" x="276" y="200">constant-time · fails closed</text>
+  <rect class="box" x="266" y="224" width="198" height="52"/>
+  <text class="t" x="276" y="244">one McpServer per session</text>
+  <text class="m" x="276" y="262">tools · prompts · ui:// resources</text>
+  <rect class="box" x="266" y="286" width="198" height="52"/>
+  <text class="t" x="276" y="306">alerts.ts · session monitor</text>
+  <text class="m" x="276" y="324">low / critical / grid / reminder</text>
+  <text class="m" x="365" y="364" text-anchor="middle">/ status page · /healthz</text>
+
+  <!-- Engine -->
+  <rect class="box" x="540" y="40" width="220" height="130" rx="6"/>
+  <text class="h" x="650" y="64" text-anchor="middle">Decision engine</text>
+  <text class="t" x="552" y="88">situation.ts → ForecastInput</text>
+  <text class="t" x="552" y="108">forecast.ts  (pure)</text>
+  <text class="m" x="552" y="126">SOC integration · can_i_run</text>
+  <text class="m" x="552" y="142">plan_day · history.ts: reports, learning</text>
+  <text class="m" x="552" y="158">property-tested</text>
+
+  <!-- Store -->
+  <rect class="box" x="540" y="190" width="220" height="90" rx="6"/>
+  <text class="h" x="650" y="214" text-anchor="middle">Household store</text>
+  <text class="t" x="552" y="238">dynamo.ts · conditional writes</text>
+  <text class="m" x="552" y="256">disk.ts · atomic rename</text>
+  <text class="m" x="552" y="272">profile · appliances · grid · plan</text>
+
+  <!-- Telemetry -->
+  <rect class="box" x="540" y="300" width="220" height="80" rx="6"/>
+  <text class="h" x="650" y="324" text-anchor="middle">Telemetry adapters</text>
+  <text class="t" x="552" y="346">cached.ts · shared, deduped</text>
+  <text class="m" x="552" y="364">victron.ts · growatt.ts · simulated.ts</text>
+
+  <!-- External -->
+  <rect class="box ext" x="800" y="40" width="140" height="60"/>
+  <text class="h" x="870" y="64" text-anchor="middle">Amazon Bedrock</text>
+  <text class="m" x="870" y="82" text-anchor="middle">Converse API · briefing</text>
+  <rect class="box ext" x="800" y="190" width="140" height="60"/>
+  <text class="h" x="870" y="214" text-anchor="middle">Amazon DynamoDB</text>
+  <text class="m" x="870" y="232" text-anchor="middle">conditional on version</text>
+  <rect class="box ext" x="800" y="300" width="140" height="80"/>
+  <text class="h" x="870" y="324" text-anchor="middle">Inverter cloud</text>
+  <text class="m" x="870" y="342" text-anchor="middle">Victron VRM API v2</text>
+  <text class="m" x="870" y="360" text-anchor="middle">Growatt OpenAPI v1</text>
+
+  <!-- Arrows -->
+  <path class="arrow" d="M190 190 H250"/>
+  <path class="back" d="M250 230 H190"/>
+  <text class="m" x="220" y="183" text-anchor="middle">requests</text>
+  <text class="m" x="220" y="246" text-anchor="middle">cards · alerts</text>
+  <path class="arrow" d="M480 120 H540"/>
+  <path class="arrow" d="M480 235 H540"/>
+  <path class="arrow" d="M480 340 H540"/>
+  <path class="arrow" d="M760 70 H800"/>
+  <path class="arrow" d="M760 220 H800"/>
+  <path class="arrow" d="M760 340 H800"/>
+  <text class="m" x="780" y="62" text-anchor="middle">15 s</text>
+  <text class="m" x="780" y="212" text-anchor="middle">retry</text>
+  <text class="m" x="780" y="332" text-anchor="middle">10 s</text>
+
+  <!-- Legend -->
+  <text class="m" x="20" y="420">Solid arrows: calls with a deadline. Dashed green: server-initiated — cards rendered from tool results, reminders and alerts pushed over the open GET stream.</text>
+  <text class="m" x="20" y="440">Every session is bound to the household its token opened; the cached telemetry layer keeps upstream load flat however many sessions are open.</text>
+</svg>

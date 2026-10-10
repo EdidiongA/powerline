@@ -40,6 +40,7 @@ const streamAbort = new AbortController();
   } catch { /* aborted */ }
 })();
 console.log("tools ->", (await rpc("tools/list")).result.tools.map((t: { name: string }) => t.name));
+console.log("prompts ->", (await rpc("prompts/list")).result.prompts.map((p: { name: string }) => p.name));
 console.log("setup_system ->", (await call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 })).content[0].text);
 console.log("add_appliance ->", (await call("add_appliance", { name: "washing machine", watts: 500, minutes: 45 })).content[0].text);
 console.log("add_appliance ->", (await call("add_appliance", { name: "iron", watts: 2000, minutes: 30 })).content[0].text);
@@ -55,7 +56,9 @@ const plan = await call("plan_day");
 console.log("plan_day ->\n" + plan.content[0].text);
 console.log("plan_day (subset, as the card would) ->\n" + (await call("plan_day", { appliances: [{ name: "iron", watts: 2000, minutes: 30 }] })).content[0].text);
 console.log("evening_briefing ->", (await call("evening_briefing")).content[0].text);
-for (const uri of ["ui://powerline/dashboard.html", "ui://powerline/planner.html"]) {
+console.log("outage_outlook ->", (await call("outage_outlook")).content[0].text);
+console.log("energy_report ->", (await call("energy_report", { period: "week" })).content[0].text);
+for (const uri of ["ui://powerline/dashboard.html", "ui://powerline/planner.html", "ui://powerline/report.html"]) {
   const res = await rpc("resources/read", { uri });
   console.log("resource ->", uri, res.result.contents[0].mimeType, `${res.result.contents[0].text.length} bytes`);
 }

@@ -2,7 +2,8 @@
  * Forecast engine — pure functions, no I/O, property-tested.
  *
  * Model: net_w(t) = pv_w(t) + grid_w(t) - load_w(t); SOC integrates net energy
- * over battery capacity, clamped to [floor, 100]. Grid, when available, covers
+ * over battery capacity, clamped to [0, 100]; the reserve floor is a line the
+ * household wants to stay above, not a physical limit. Grid, when available, covers
  * any deficit so the battery only discharges when the grid is off.
  */
 export interface SystemProfile {
@@ -10,7 +11,7 @@ export interface SystemProfile {
   batteryKwh: number;
   inverterKw: number;
   reserveSocPct: number;       // floor the household wants to protect (e.g. 20)
-  usableDepthPct?: number;     // e.g. 80 for LiFePO4 (SOC below 100-usable is unusable)
+  tzOffset?: number;           // household UTC offset in hours; server default (TZ_OFFSET) when absent
 }
 
 export interface Appliance {
@@ -101,7 +102,7 @@ export function canRun(base: ForecastInput, appliance: Appliance, horizonHours =
 
   let bestStart: number | null = null;
   if (!(withNow.minSocPct > floor) || overInverter) {
-    for (let h = 1; h < horizonHours - runHours; h++) {
+    for (let h = 1; h <= horizonHours - runHours; h++) {
       const trial = forecast({ ...base, extraLoads: [...(base.extraLoads ?? []), { startHour: h, watts: appliance.watts, minutes: appliance.minutes }] }, horizonHours);
       const fitsInverter = appliance.watts + (base.loadForecastW[h] ?? 0) <= base.profile.inverterKw * 1000;
       // Acceptable if it keeps SOC above the floor, or — when the baseline already breaches —
@@ -132,7 +133,7 @@ export interface GridEvent { at: string; on: boolean }
  * (clock jumps, gaps in logging) are ignored rather than treated as one long state.
  */
 export function gridProbabilityByHour(events: GridEvent[], weekday: number, minMinutes = 60): Array<number | null> {
-  const sorted = [...events].sort((a, b) => a.at.localeCompare(b.at));
+  const sorted = [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const onMinutes = new Array<number>(24).fill(0);
   const totMinutes = new Array<number>(24).fill(0);
   for (let i = 0; i + 1 < sorted.length; i++) {
@@ -186,10 +187,12 @@ export function planDay(base: ForecastInput, appliances: Appliance[], horizonHou
   for (const a of sorted) {
     const runHours = Math.max(1, Math.ceil(a.minutes / 60));
     let placed: { h: number; onSurplus: boolean; source: "solar" | "grid" | "battery" } | null = null;
+    let fitsSomewhere = false; // false → the inverter, not the battery, is what rules it out
     // Pass 1: prefer slots fully on PV surplus. Pass 2: any slot that keeps SOC above floor.
     for (const wantSurplus of [true, false]) {
       for (let h = 0; h <= horizonHours - runHours; h++) {
         if (a.watts + (base.loadForecastW[h] ?? 0) > base.profile.inverterKw * 1000) continue;
+        fitsSomewhere = true;
         const trial = forecast({ ...base, extraLoads: [...extra, { startHour: h, watts: a.watts, minutes: a.minutes }] }, horizonHours);
         const run = trial.points.slice(h, h + runHours);
         const onSurplus = run.every((p) => p.pvW >= p.loadW);          // sun alone covers everything
@@ -207,10 +210,31 @@ export function planDay(base: ForecastInput, appliances: Appliance[], horizonHou
       items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: placed.h, onSurplus: placed.onSurplus, source: placed.source, reason });
     } else {
       items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: null, onSurplus: false, source: "none",
-        reason: baselineBreaches ? "no solar-surplus slot today" : `no slot keeps the battery above ${floor}% today` });
+        reason: !fitsSomewhere ? `${a.watts} W plus the household load exceeds the ${base.profile.inverterKw} kW inverter`
+          : baselineBreaches ? "no solar-surplus slot today" : `no slot keeps the battery above ${floor}% today` });
     }
   }
   const f = forecast({ ...base, extraLoads: extra }, horizonHours);
   items.sort((x, y) => (x.startHour ?? 99) - (y.startHour ?? 99));
   return { items, minSocPct: f.minSocPct, hitsFloor: f.hitsFloor };
+}
+
+
+// ---- Armed plan: which reminders are due ------------------------------------
+
+export interface DueCheckItem { name: string; startAt: string; firedAt?: string }
+
+/**
+ * Items whose start time has arrived (within `graceMinutes` — a reminder an hour
+ * late is noise, not help) and which have not yet fired. Pure: safe to call from
+ * every session's monitor; the store decides who marks it fired.
+ */
+export function dueReminders<T extends DueCheckItem>(items: T[], nowIso: string, graceMinutes = 20): T[] {
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(now)) return [];
+  return items.filter((i) => {
+    if (i.firedAt) return false;
+    const at = Date.parse(i.startAt);
+    return !Number.isNaN(at) && at <= now && now - at <= graceMinutes * 60_000;
+  });
 }

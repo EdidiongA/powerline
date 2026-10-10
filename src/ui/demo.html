@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Powerline — simulated Alexa+ host</title>
+    <style>
+      :root {
+        --ink: #16202a; --ink-2: #47566a; --ink-3: #66788c; --bg: #f5f7fa; --panel: #ffffff;
+        --charge: #1e9e5a; --sun: #e8a33d; --grid: #4b7bb8; --alarm: #c8452f; --you: #e9eef4;
+        --rule: rgba(22, 32, 42, .14); --field: rgba(22, 32, 42, .05);
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      :root[data-theme="dark"] { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd; --bg: #0f171f; --panel: #152130; --you: #1c2a3a;
+        --rule: rgba(231,237,244,.16); --field: rgba(231,237,244,.06); }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd; --bg: #0f171f; --panel: #152130; --you: #1c2a3a;
+        --rule: rgba(231,237,244,.16); --field: rgba(231,237,244,.06); } }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+      header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); background: var(--panel); }
+      header .mark { width: 28px; height: 28px; flex: none; }
+      header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+      header .sub { font-size: 12px; color: var(--ink-3); }
+      header .spacer { flex: 1; }
+      .pill { font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--rule); padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
+      .pill.ok { color: var(--charge); border-color: var(--charge); }
+      .pill.bad { color: var(--alarm); border-color: var(--alarm); }
+      button.icon { font: inherit; font-size: 12px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); padding: 5px 10px; border-radius: 999px; cursor: pointer; }
+      button.icon[aria-pressed="true"] { background: var(--charge); color: #fff; border-color: var(--charge); }
+      main { flex: 1; overflow: auto; padding: 18px; }
+      .thread { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+      .msg { max-width: 92%; }
+      .msg.you { align-self: flex-end; background: var(--you); padding: 10px 14px; border-radius: 14px 14px 3px 14px; font-size: 15px; }
+      .msg.alexa { align-self: flex-start; font-size: 15px; line-height: 1.45; }
+      .msg.alexa .who { font-size: 11px; color: var(--ink-3); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
+      .msg.alexa .tool { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+      .msg.alexa .tool code { background: var(--field); padding: 1px 5px; border-radius: 3px; }
+      .card { align-self: stretch; background: var(--panel); border-radius: 6px; border: 1px solid var(--rule); overflow: hidden; }
+      .card iframe { display: block; width: 100%; border: 0; height: 320px; background: transparent; transition: height .25s ease; }
+      .toast { align-self: center; background: var(--panel); border: 1px solid var(--rule); border-left: 3px solid var(--sun); border-radius: 8px; padding: 10px 14px; font-size: 14px; max-width: 92%; }
+      .toast.critical, .toast.alarm { border-left-color: var(--alarm); }
+      .toast.reminder { border-left-color: var(--charge); }
+      .toast small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 2px; }
+      .thinking { align-self: flex-start; color: var(--ink-3); font-size: 13px; }
+      footer { border-top: 1px solid var(--rule); background: var(--panel); padding: 12px 18px; }
+      form { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: center; }
+      input[type=text] { flex: 1; font: inherit; font-size: 15px; padding: 11px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--bg); color: var(--ink); min-width: 0; }
+      input[type=text]:focus { outline: 2px solid var(--grid); outline-offset: 1px; }
+      button.send { font: inherit; font-size: 14px; font-weight: 600; background: var(--charge); color: #fff; border: 0; padding: 11px 18px; border-radius: 999px; cursor: pointer; }
+      button.send:disabled, button.mic:disabled { opacity: .5; cursor: progress; }
+      button.mic { font: inherit; font-size: 18px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); cursor: pointer; flex: none; }
+      button.mic[aria-pressed="true"] { background: var(--alarm); color: #fff; border-color: var(--alarm); }
+      .hints { max-width: 720px; margin: 8px auto 0; display: flex; gap: 6px; flex-wrap: wrap; }
+      .hints button { font: inherit; font-size: 12px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+      .hints button:hover { background: var(--field); }
+      dialog { border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; max-width: 420px; font-family: var(--sans); color: var(--ink); background: var(--panel); }
+      dialog::backdrop { background: rgba(0,0,0,.35); }
+      dialog h2 { margin: 0 0 6px; font-size: 16px; }
+      dialog p { margin: 0 0 12px; font-size: 13.5px; color: var(--ink-2); }
+      dialog input { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); color: var(--ink); margin-bottom: 12px; }
+      dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+      .note { max-width: 720px; margin: 0 auto 10px; font-size: 12px; color: var(--ink-3); }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <svg class="mark" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="52" height="52" rx="14" fill="#152130" stroke="rgba(238,243,248,.14)"/><path d="M31 9 L14 31 h12 l-3 16 L42 24 H30 z" fill="#2fbf72"/></svg>
+      <div><h1>Powerline</h1><div class="sub">Simulated Alexa+ host — a stand-in for the device, not the device</div></div>
+      <div class="spacer"></div>
+      <span class="pill" id="conn">connecting…</span>
+      <span class="pill" id="brain">—</span>
+      <button class="icon" id="voice" aria-pressed="false" title="Read replies aloud">🔊 Voice</button>
+      <button class="icon" id="theme" title="Toggle theme">◐</button>
+    </header>
+    <main><div class="thread" id="thread"></div></main>
+    <footer>
+      <form id="form" autocomplete="off">
+        <button type="button" class="mic" id="mic" aria-pressed="false" title="Speak">🎤</button>
+        <input type="text" id="input" placeholder="Ask Powerline… e.g. How's the power?" aria-label="Message" />
+        <button type="submit" class="send" id="send">Send</button>
+      </form>
+      <div class="hints" id="hints"></div>
+    </footer>
+    <dialog id="tokenDialog">
+      <h2>This server needs a token</h2>
+      <p>Powerline is running with <code>API_TOKENS</code> set. Paste the household's secret; it stays in this tab.</p>
+      <input type="password" id="tokenInput" placeholder="bearer token" />
+      <div class="row"><button class="send" id="tokenOk">Connect</button></div>
+    </dialog>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

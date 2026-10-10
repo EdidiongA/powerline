@@ -1,0 +1,6 @@
+{ "data": { "tlx_sn": "MIN0000001", "dataloggerSn": "CRAZT00002", "time": "2026-09-25 11:30:05",
+  "ppv": "2876.5", "ppv1": "1440.0", "ppv2": "1436.5", "pac": "2810.2",
+  "pLocalLoad": "512.7", "pacToUserTotal": "0", "pacToGridTotal": "1897.5",
+  "chargePower": "400.0", "dischargePower": "0", "SOC": "94", "vAc1": "234.1",
+  "epvToday": "9.7", "status": 1 },
+  "error_code": 0, "error_msg": "" }

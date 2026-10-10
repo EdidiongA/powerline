@@ -1,0 +1,23 @@
+# AWS App Runner — deploy from this repository without building a container locally.
+# Console: App Runner → Create service → Source: GitHub repository → Runtime: Node.js 22 →
+# "Use a configuration file" (this one). Instance role needs DynamoDB + Bedrock access when
+# STORE=dynamodb / BEDROCK_MODEL_ID are set. See docs/DEPLOY.md.
+version: 1.0
+runtime: nodejs22
+build:
+  commands:
+    build:
+      - npm ci
+      - npm run build
+run:
+  runtime-version: 22
+  command: node dist/http.js
+  network:
+    port: 3000
+  env:
+    - name: HOST
+      value: "0.0.0.0"
+    - name: NODE_ENV
+      value: production
+    - name: DATA_DIR
+      value: /tmp/powerline-data   # disk store is ephemeral on App Runner; use STORE=dynamodb for a real household

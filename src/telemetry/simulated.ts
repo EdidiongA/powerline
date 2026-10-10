@@ -1,4 +1,5 @@
 import type { Telemetry, TelemetrySource } from "./types.js";
+import { TZ_OFFSET } from "../config.js";
 
 /**
  * Deterministic-ish simulator for demos and tests.
@@ -47,8 +48,10 @@ export class SimulatedSource implements TelemetrySource {
   }
 
   private simNow(): number {
-    const start = (this.opts.clockStart ?? new Date()).getTime();
-    return start + (Date.now() - this.t0real) * (this.opts.speed ?? 1);
+    const clock = this.opts.clockStart;
+    const start = clock && Number.isFinite(clock.getTime()) ? clock.getTime() : this.t0real;
+    const speed = Number.isFinite(this.opts.speed) && (this.opts.speed as number) > 0 ? (this.opts.speed as number) : 1;
+    return start + (Date.now() - this.t0real) * speed;
   }
 
   private gridOn(hour: number): boolean {
@@ -59,7 +62,7 @@ export class SimulatedSource implements TelemetrySource {
   async current(): Promise<Telemetry> {
     const now = this.simNow();
     const d = new Date(now);
-    const hour = d.getUTCHours() + d.getUTCMinutes() / 60 + 1; // Lagos = UTC+1
+    const hour = ((d.getUTCHours() + d.getUTCMinutes() / 60 + TZ_OFFSET) % 24 + 24) % 24; // local hour, follows TZ_OFFSET
     const cloud = 0.85 + 0.15 * this.rnd();
     const pv = Math.round(clearSkyPvW(hour % 24, this.opts.arrayKw) * cloud);
     const load = Math.round(typicalLoadW(hour % 24) * (0.9 + 0.2 * this.rnd()));
@@ -87,7 +90,7 @@ export class SimulatedSource implements TelemetrySource {
 
   async pvForecast(): Promise<number[]> {
     const now = new Date(this.simNow());
-    const startHour = now.getUTCHours() + 1;
+    const startHour = ((now.getUTCHours() + TZ_OFFSET) % 24 + 24) % 24;
     return Array.from({ length: 24 }, (_, i) => clearSkyPvW((startHour + i) % 24, this.opts.arrayKw));
   }
 }

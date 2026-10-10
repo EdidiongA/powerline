@@ -1,0 +1,1 @@
+{ "data": { "count": 1, "plants": [ { "plant_id": 1234567, "name": "Home", "country": "Nigeria", "city": "Lagos", "status": 1 } ] }, "error_code": 0, "error_msg": "" }

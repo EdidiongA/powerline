@@ -1,0 +1,5 @@
+{ "data": { "mix_sn": "ZT00100001", "dataloggerSn": "CRAZT00001", "time": "2026-09-26 01:12:44",
+  "ppv": 0, "pac": 0, "pLocalLoad": 355.0, "pacToUserTotal": 0.0, "pacToGridTotal": 0.0,
+  "pcharge1": 0.0, "pdischarge1": 355.0, "soc": 43, "vac1": 0.0, "fac": 0.0,
+  "vbat": 49.7, "status": 3, "statusText": "Discharge" },
+  "error_code": 0, "error_msg": "" }

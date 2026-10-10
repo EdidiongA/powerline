@@ -1,0 +1,1 @@
+{ "data": { "count": 1, "devices": [ { "device_sn": "MIN0000001", "last_update_time": "2026-09-25 14:03:52", "model": "S25B00D00T00P0FU01M0072", "lost": false, "status": 1, "manufacturer": "Growatt", "device_id": 117, "datalogger_sn": "CRAZT00002", "type": 7 } ] }, "error_code": 0, "error_msg": "" }

@@ -1,0 +1,49 @@
+name: CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+jobs:
+  test:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+  browser:
+    name: simulated host in headless Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check:browser
+  docker:
+    name: docker build + healthz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t powerline .
+      - name: run and probe
+        run: |
+          docker run -d --name pl -p 3000:3000 powerline
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3000/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/healthz | grep -q '"ok":true'
+          curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/ | grep -q 200
+          docker logs pl
+          docker rm -f pl

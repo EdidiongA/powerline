@@ -18,6 +18,8 @@ export interface VictronOptions {
   baseUrl?: string;
 }
 
+const REQUEST_TIMEOUT_MS = 10_000;
+
 type StatsRecord = Record<string, Array<[number, number, ...number[]]> | false>;
 
 export class VictronSource implements TelemetrySource {
@@ -33,7 +35,7 @@ export class VictronSource implements TelemetrySource {
   private async auth(): Promise<string> {
     if (this.authHeader) return this.authHeader;
     if (this.opts.demo) {
-      const r = await fetch(`${this.base}/auth/loginAsDemo`);
+      const r = await fetch(`${this.base}/auth/loginAsDemo`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       const j = (await r.json()) as { token: string };
       this.authHeader = `Bearer ${j.token}`;
     } else if (this.opts.token) {
@@ -45,7 +47,8 @@ export class VictronSource implements TelemetrySource {
   }
 
   private async get<T>(path: string): Promise<T> {
-    const r = await fetch(`${this.base}${path}`, { headers: { "X-Authorization": await this.auth() } });
+    // A hung upstream must not hang a tool call (and with it the card's busy state) forever.
+    const r = await fetch(`${this.base}${path}`, { headers: { "X-Authorization": await this.auth() }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (r.status === 401) this.authHeader = null; // token expired (demo JWT) → re-login next call
     const j = (await r.json()) as { success: boolean; errors?: unknown; records?: T };
     if (!j.success) throw new Error(`VRM error: ${JSON.stringify(j.errors)}`);
@@ -67,8 +70,11 @@ export class VictronSource implements TelemetrySource {
         return typeof v === "number" ? v : null;
       };
       const gp = lastOf("gp");
+      // Stamp the reading with the sample's own time (VRM buckets are up to 15 min old), not ours.
+      const sampleTs = rec.bs && rec.bs.length ? rec.bs[rec.bs.length - 1][0] : null;
+      const at = typeof sampleTs === "number" && Number.isFinite(sampleTs) ? new Date(sampleTs * 1000).toISOString() : new Date().toISOString();
       this.last = {
-        at: new Date().toISOString(),
+        at,
         pv_w: Math.round(lastOf("Pdc") ?? 0),
         load_w: Math.round(lastOf("ac_loads") ?? 0),
         battery_w: Math.round(lastOf("bp") ?? 0),

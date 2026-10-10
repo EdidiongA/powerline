@@ -4,6 +4,9 @@ import { VictronSource } from "./victron.js";
 import { GrowattSource } from "./growatt.js";
 import type { TelemetrySource } from "./types.js";
 
+/** Numeric env with a fallback for unset, empty or non-numeric values. */
+const num = (v: string | undefined, fallback: number): number => (v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : fallback);
+
 export type { Telemetry, TelemetrySource } from "./types.js";
 export { SimulatedSource, VictronSource, GrowattSource, CachedSource };
 
@@ -26,7 +29,7 @@ function buildSource(env: NodeJS.ProcessEnv): TelemetrySource {
       return new VictronSource({
         token: env.VRM_TOKEN,
         demo: env.VRM_DEMO === "1",
-        siteId: Number(env.VRM_SITE_ID ?? 219742), // 219742 = VRM demo "ESS System"
+        siteId: num(env.VRM_SITE_ID, 219742), // 219742 = VRM demo "ESS System"
       });
     case "growatt":
       if (!env.GROWATT_TOKEN) throw new Error("GROWATT_TOKEN required");
@@ -39,11 +42,11 @@ function buildSource(env: NodeJS.ProcessEnv): TelemetrySource {
       });
     default:
       return new SimulatedSource({
-        arrayKw: Number(env.SIM_ARRAY_KW ?? 4.5),
-        batteryKwh: Number(env.SIM_BATTERY_KWH ?? 10),
-        speed: Number(env.SIM_SPEED ?? 60), // 1 real second = 1 simulated minute
-        startSoc: env.SIM_START_SOC ? Number(env.SIM_START_SOC) : undefined,
-        clockStart: env.SIM_CLOCK_START ? new Date(env.SIM_CLOCK_START) : undefined, // e.g. 2026-09-09T21:00:00Z
+        arrayKw: Math.max(0.1, num(env.SIM_ARRAY_KW, 4.5)),
+        batteryKwh: Math.max(0.1, num(env.SIM_BATTERY_KWH, 10)),
+        speed: num(env.SIM_SPEED, 60), // 1 real second = 1 simulated minute
+        startSoc: env.SIM_START_SOC ? Math.min(100, Math.max(0, num(env.SIM_START_SOC, 65))) : undefined,
+        clockStart: env.SIM_CLOCK_START ? new Date(env.SIM_CLOCK_START) : undefined, // e.g. 2026-09-09T21:00:00Z; invalid → now
       });
   }
 }

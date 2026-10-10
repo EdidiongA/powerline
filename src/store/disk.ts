@@ -8,7 +8,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { clone, emptyHousehold, normalize, type Household, type StoreBackend, type StoreHealth } from "./types.js";
+import { clone, emptyHousehold, normalize, sanitize, type Household, type StoreBackend, type StoreHealth } from "./types.js";
 
 type Db = Record<string, Household>;
 
@@ -54,16 +54,18 @@ export class DiskStore implements StoreBackend {
 
   async get(id: string): Promise<Household> {
     const db = await this.load();
-    return clone(db[id] ?? emptyHousehold());
+    const raw = db[id];
+    return sanitize(clone(raw && typeof raw === "object" ? { ...emptyHousehold(), ...raw } : emptyHousehold()));
   }
 
   async update(id: string, mutate: (h: Household) => void): Promise<Household> {
     return this.enqueue(async () => {
       const db = await this.load();
-      const next = clone(db[id] ?? emptyHousehold());
+      const raw = db[id];
+      const next = sanitize(clone(raw && typeof raw === "object" ? { ...emptyHousehold(), ...raw } : emptyHousehold()));
       mutate(next);
       normalize(next);
-      next.version = (db[id]?.version ?? 0) + 1;
+      next.version = (next.version ?? 0) + 1;     // sanitised above, so a non-numeric version in the file restarts at 1
       db[id] = next;
       await this.persist(db);
       return clone(next);

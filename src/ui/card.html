@@ -6,13 +6,16 @@
     <title>Powerline</title>
     <style>
       :root {
-        --ink: #16202a; --ink-2: #47566a; --ink-3: #8394a8;
+        --ink: #16202a; --ink-2: #47566a; --ink-3: #66788c;
         --charge: #1e9e5a; --sun: #e8a33d; --grid: #4b7bb8; --alarm: #c8452f;
         --rule: rgba(22, 32, 42, .14); --field: rgba(22, 32, 42, .05);
         --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       }
+      /* Theme: the host tells us (data-theme, set from the MCP Apps host context); the OS setting is the fallback. */
+      :root[data-theme="dark"] { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd;
+                --rule: rgba(231, 237, 244, .16); --field: rgba(231, 237, 244, .06); }
       @media (prefers-color-scheme: dark) {
-        :root { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #6c7e93;
+        :root:not([data-theme="light"]) { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd;
                 --rule: rgba(231, 237, 244, .16); --field: rgba(231, 237, 244, .06); }
       }
       * { box-sizing: border-box; }
@@ -21,13 +24,16 @@
       .frame { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
 
       /* Hero: charge + verdict */
-      .hero { display: flex; align-items: baseline; gap: 14px; padding: 16px 16px 12px; }
+      .hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 16px 16px 12px; }
       .charge { font-size: 54px; line-height: .86; font-weight: 600; letter-spacing: -.035em; }
       .charge span { font-size: 22px; font-weight: 500; letter-spacing: -.01em; margin-left: 1px; }
       .verdict { flex: 1; min-width: 0; }
       .verdict b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; }
       .verdict i { display: block; font-style: normal; font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
       .flow { font-size: 12px; color: var(--ink-2); white-space: nowrap; align-self: center; }
+      .verdict { min-width: 150px; }
+      /* Narrow hosts: the flow line drops under the verdict instead of squeezing it. */
+      @media (max-width: 400px) { .flow { flex-basis: 100%; align-self: auto; } .charge { font-size: 46px; } }
 
       /* Charge bar with reserve notch */
       .bar { position: relative; height: 6px; margin: 0 16px 16px; background: var(--field); border-radius: 1px; }
@@ -53,6 +59,7 @@
 
       .placeholder { padding: 22px 16px; color: var(--ink-3); font-size: 13px; }
       .meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 10.5px; color: var(--ink-3); }
+      :focus-visible { outline: 2px solid var(--grid); outline-offset: 2px; }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
   </head>

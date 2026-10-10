@@ -1,0 +1,22 @@
+# docker compose up  → simulator at night with a low battery, so alerts and "not now" answers show immediately.
+# The simulated clock runs at SIM_SPEED simulated seconds per real second (60 = one simulated minute
+# per second). Raise it to 600 to watch an armed reminder land within about a minute.
+services:
+  powerline:
+    build: .
+    ports: ["3000:3000"]
+    volumes: ["powerline-data:/data"]
+    environment:
+      SIM_START_SOC: "34"
+      SIM_CLOCK_START: "2026-10-01T20:00:00Z"
+      SIM_SPEED: "60"
+      ALERT_INTERVAL_MS: "10000"
+      TZ_OFFSET: "1"
+      # Uncomment to require a token (household:secret). MCPJam: add header Authorization: Bearer <secret>
+      # API_TOKENS: "home:change-me-to-something-long"
+      # Live data instead of the simulator:
+      # POWER_SOURCE: victron
+      # VRM_DEMO: "1"
+      # VRM_SITE_ID: "219742"
+volumes:
+  powerline-data:

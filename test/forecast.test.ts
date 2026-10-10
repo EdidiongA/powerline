@@ -107,3 +107,16 @@ test("planDay labels a night slot covered by grid as grid, not solar", async () 
   assert.equal(plan.items[0].source, "grid");
   assert.equal(plan.items[0].onSurplus, false);
 });
+
+test("dueReminders fires once, on time, and never stale", async () => {
+  const { dueReminders } = await import("../src/forecast.js");
+  const items = [
+    { name: "iron", startAt: "2026-10-01T09:00:00Z" },
+    { name: "pump", startAt: "2026-10-01T10:00:00Z" },
+    { name: "old", startAt: "2026-10-01T07:00:00Z" },                 // > grace window ago
+    { name: "done", startAt: "2026-10-01T09:05:00Z", firedAt: "x" }, // already fired
+  ];
+  assert.deepEqual(dueReminders(items, "2026-10-01T09:10:00Z").map((i) => i.name), ["iron"]);
+  assert.deepEqual(dueReminders(items, "2026-10-01T08:59:00Z"), []);
+  assert.deepEqual(dueReminders(items, "garbage"), []);
+});

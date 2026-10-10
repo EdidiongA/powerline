@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Powerline — report</title>
+    <style>
+      :root {
+        --ink: #16202a; --ink-2: #47566a; --ink-3: #66788c;
+        --charge: #1e9e5a; --sun: #e8a33d; --grid: #4b7bb8; --alarm: #c8452f;
+        --rule: rgba(22, 32, 42, .14); --field: rgba(22, 32, 42, .05); --hover: rgba(22, 32, 42, .035);
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      :root[data-theme="dark"] { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd;
+                --rule: rgba(231,237,244,.16); --field: rgba(231,237,244,.06); --hover: rgba(231,237,244,.05); }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) { --ink: #e7edf4; --ink-2: #9fb0c4; --ink-3: #98a9bd;
+                --rule: rgba(231,237,244,.16); --field: rgba(231,237,244,.06); --hover: rgba(231,237,244,.05); }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 14px 14px 12px; background: transparent; color: var(--ink);
+             font-family: var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+      .frame { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; position: relative; }
+      .frame.busy { opacity: .55; }
+      .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; flex-wrap: wrap; }
+      .head h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+      .tabs { display: flex; gap: 2px; }
+      .tabs button { white-space: nowrap; font: inherit; font-size: 11.5px; padding: 4px 9px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); border-radius: 3px; cursor: pointer; }
+      .tabs button[aria-pressed="true"] { background: var(--field); color: var(--ink); font-weight: 600; }
+      .tabs button:disabled { opacity: .6; cursor: progress; }
+
+      /* Headline strip */
+      .strip { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+      .strip > div { padding: 10px 14px 11px; }
+      .strip > div + div { border-left: 1px solid var(--rule); }
+      .strip dt { font-size: 11px; color: var(--ink-3); margin: 0 0 2px; }
+      .strip dd { margin: 0; font-size: 17px; font-weight: 550; letter-spacing: -.015em; }
+      .strip dd em { font-style: normal; font-size: 11.5px; font-weight: 400; color: var(--ink-2); margin-left: 3px; }
+      @media (max-width: 420px) { .strip { grid-template-columns: repeat(2, 1fr); } .strip > div:nth-child(3) { border-left: 0; } .strip > div:nth-child(-n+2) { border-bottom: 1px solid var(--rule); } }
+
+      /* Day bars */
+      .days { padding: 12px 16px 6px; }
+      .days h2 { margin: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
+      .bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; align-items: end; height: 96px; }
+      .day { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+      .pair { display: flex; gap: 3px; align-items: flex-end; width: 100%; height: 100%; justify-content: center; }
+      .bar { width: 38%; max-width: 22px; border-radius: 2px 2px 0 0; min-height: 2px; transition: height .45s cubic-bezier(.2,.7,.3,1); }
+      .bar.sun { background: var(--sun); opacity: .85; }
+      .bar.load { background: var(--ink-3); opacity: .55; }
+      .bar.load.gridded { background: var(--grid); opacity: .7; }
+      .lbl { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+      .legend { display: flex; gap: 13px; margin: 6px 0 2px; font-size: 10.5px; color: var(--ink-3); }
+      .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin-right: 4px; vertical-align: -1px; }
+
+      .foot { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px 11px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-2); }
+      .foot b { color: var(--ink); font-weight: 550; }
+      .placeholder { padding: 22px 16px; color: var(--ink-3); font-size: 13px; }
+      .status { margin-top: 8px; font-size: 10.5px; color: var(--ink-3); min-height: 13px; }
+      :focus-visible { outline: 2px solid var(--grid); outline-offset: 2px; }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <div class="frame" id="root"><div class="placeholder">Adding up the readings…</div></div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <script type="module" src="./report.ts"></script>
+  </body>
+</html>
