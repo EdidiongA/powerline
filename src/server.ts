@@ -16,7 +16,7 @@ import { registerReportTools } from "./tools/report.js";
 export type { SessionContext } from "./situation.js";
 export { checkCardsBuilt } from "./views.js";
 
-export const VERSION = "0.13.0";
+export const VERSION = "0.13.1";
 
 export function createServer(ctx: SessionContext, opts: { llm?: Summarizer } = {}): McpServer {
   const server = new McpServer(

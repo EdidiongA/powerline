@@ -32,7 +32,7 @@ anyone can try it in a browser.
 | **Host** | `/demo`: full MCP Apps host (SDK `AppBridge`), pushed alerts as toasts, elicitation dialog, voice in/out, Bedrock or offline rule router |
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
-| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, `apprunner.yaml` deploy from GitHub |
+| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS) |
 | **Proven** | 111 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
 | **For agents** | Agent Skill (`skills/`), prompts, household resource, 24-entry friction log, docs PR upstream |
 
@@ -291,7 +291,7 @@ Judges and users deserve the line drawn clearly.
 ## Deploying where Alexa+ can reach it
 
 Local use needs nothing beyond `npm start`. For a public, token-protected HTTPS endpoint — a tunnel
-for a demo, AWS App Runner for always-on, or a Raspberry Pi beside the inverter — see
+for a demo, Amazon ECS Express Mode for always-on, or a Raspberry Pi beside the inverter — see
 [`docs/DEPLOY.md`](docs/DEPLOY.md). What changed when is in [`CHANGELOG.md`](CHANGELOG.md); what got in
 the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 
@@ -306,7 +306,7 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 - [x] Docker image + compose; CI on Ubuntu + Windows; 111 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
 - [x] MCP prompts, an Agent Skill, tool annotations, a household resource, and elicitation before the one destructive action
 - [x] History: hourly samples, energy reports with cost, outage outlook, and a forecast that learns the household's own load shape and real solar yield
-- [x] `apprunner.yaml` — deploy from GitHub to AWS App Runner with no container build
+- [x] `scripts/deploy-ecs-express.sh` — one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI
 - [x] Per-household timezone (`setup_system … tzOffset`)
 - [x] OAuth 2.1 account linking (PKCE, dynamic registration, consent page) — the Alexa+ linking path, tested with the official client
 - [x] Weather-aware solar forecast (Open-Meteo), with clear-sky fallback

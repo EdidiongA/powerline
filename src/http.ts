@@ -30,7 +30,7 @@ const auth = new Authenticator();
 const oauth = new OAuthServer((household, secret) => auth.verify(household, secret));
 auth.oauthLookup = (t) => oauth.householdFor(t);
 /**
- * The public origin, for OAuth metadata and redirects. Behind App Runner / a tunnel the process sees
+ * The public origin, for OAuth metadata and redirects. Behind a load balancer / a tunnel the process sees
  * plain HTTP on an internal host, so the forwarded headers (or PUBLIC_URL) decide what clients are told.
  */
 const PUBLIC_URL = process.env.PUBLIC_URL?.replace(/\/$/, "");

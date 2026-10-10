@@ -183,3 +183,10 @@ Judges award up to 10% bonus for these. Log as you go; don't reconstruct at the 
 - **Severity:** Major for a first OAuth implementation — each is a silent integration failure, not an error.
 - **Workaround:** Implemented the strict reading of each RFC and wrote the negative cases into `test/oauth.test.ts` (error redirects with `state`, `resource` audience check, `client_id` required on refresh, `error="invalid_token"` on expired tokens).
 - **Suggestion:** A one-page "what an MCP host actually sends" table in the authorization spec — parameters, methods, headers — with a conformance test an authorization server can run against the official client.
+
+## 2026-10-10 — AWS App Runner is closed to new customers; the deploy path had to change
+- **Task:** Give judges a live HTTPS URL. The plan was App Runner from the GitHub repo (`apprunner.yaml`, one CLI call).
+- **Actual:** The App Runner console greets a new account with "Starting April 30, 2026, AWS App Runner is no longer accepting new customers" and points at Amazon ECS Express Mode. Nothing in the service's own getting-started docs, the CLI, or the hackathon resources said so; the first sign was the banner after the GitHub-connection step had already been written up. Express Mode works and is one call too (`create-express-gateway-service`), but it needs a registry image rather than building from source, two IAM roles, and a default VPC — so a "deploy from GitHub with nothing installed" story became "CI publishes the image to GitHub's registry, CloudShell runs one script".
+- **Severity:** Major for a weekend builder — an afternoon lost to rewriting a working deploy path; nothing in the product itself.
+- **Workaround:** `.github/workflows/image.yml` publishes `ghcr.io/<owner>/powerline` on every push; `scripts/deploy-ecs-express.sh` creates the roles, the service, and prints the URL. App Runner files removed.
+- **Suggestion:** Put the App Runner notice on the service's documentation landing page and in the AWS Builder Center hackathon resources, and give Express Mode a "from a public GitHub image" example in its getting-started page — that is the shape most hackathon projects have.

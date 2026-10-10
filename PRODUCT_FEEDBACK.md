@@ -254,4 +254,4 @@ facts, with a deadline and a plain-facts fallback; **Amazon DynamoDB** (`src/sto
 per-household state with conditional writes, strongly consistent reads, jittered retries and bounded
 records. Both are exercised at runtime (`npm run start:aws` with `STORE=dynamodb` and
 `BEDROCK_MODEL_ID` set) and the integration is documented in the README's *Store* and *Environment*
-sections. Deployment to AWS App Runner is described in `docs/DEPLOY.md`.
+sections. Deployment to Amazon ECS Express Mode is described in `docs/DEPLOY.md` (App Runner, the first plan, closed to new customers in April 2026 — see the friction log).

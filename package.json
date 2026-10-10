@@ -1,6 +1,6 @@
 {
   "name": "powerline",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "type": "module",
   "description": "Powerline — Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",

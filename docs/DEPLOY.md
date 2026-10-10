@@ -14,66 +14,59 @@ ngrok http 3000            # gives https://<id>.ngrok.app
 Register `https://<id>.ngrok.app/mcp` with the host and send `Authorization: Bearer <token>`.
 Everything else is unchanged. The tunnel dies with your laptop; fine for a demo, not for a household.
 
-## 2. AWS App Runner from the GitHub repo (always on, no Docker needed, ~$5/month idle)
+## 2. Amazon ECS Express Mode (always on, public HTTPS, no Docker on your machine)
 
-**Fastest:** one GitHub connection in the App Runner console, then one command —
+> AWS App Runner stopped accepting new customers on 30 April 2026; ECS Express Mode is what AWS points
+> to instead. It gives a Fargate task behind a load balancer with a `https://<name>.ecs.<region>.on.aws`
+> URL from one CLI call.
+
+The image is built by GitHub Actions (`.github/workflows/image.yml`) on every push to `main` and
+published to `ghcr.io/<you>/powerline:latest`. Make that package **public** once (GitHub → your
+profile → *Packages* → *powerline* → *Package settings* → *Change visibility*), then from
+**AWS CloudShell** (the `>_` icon in the console footer; nothing to install, no keys):
 
 ```bash
-CONNECTION_ARN=arn:aws:apprunner:us-east-1:<acct>:connection/<name>/<id> \
-API_TOKEN_SECRET=$(openssl rand -hex 24) \
-bash scripts/deploy-apprunner.sh          # prints the live /demo URL and the token for judges
+curl -fsSL https://raw.githubusercontent.com/EdidiongA/powerline/main/scripts/deploy-ecs-express.sh -o deploy.sh
+API_TOKEN_SECRET=$(openssl rand -hex 24) bash deploy.sh     # prints the live /demo URL and the judge token
 ```
 
-Add `STORE=dynamodb DYNAMO_TABLE=powerline BEDROCK_MODEL_ID=… INSTANCE_ROLE_ARN=…` to the same command for
-the full AWS path. The manual route, if you prefer the console:
+The script creates the two IAM roles Express Mode needs (idempotent), restores the default VPC if it
+is missing, creates the service with port `3000`, health check `/healthz`, one task, and prints the URL
+when `/healthz` answers. Run it again to roll a new image; `bash deploy.sh delete` tears it down.
 
-The repo carries an `apprunner.yaml`, so App Runner can build and run it straight from GitHub:
+For the full AWS path add `STORE=dynamodb DYNAMO_TABLE=powerline BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 TASK_ROLE_ARN=<role>`
+to the same command, where the role trusts `ecs-tasks.amazonaws.com` and allows `dynamodb:GetItem/PutItem/UpdateItem`
+on the table and `bedrock:InvokeModel` on the model. Without it the service runs the simulator on
+ephemeral disk — a complete demo, reset on each deploy.
 
-1. Console → **App Runner → Create service** → Source: **Source code repository** → connect GitHub → pick `EdidiongA/powerline`, branch `main` → Deployment trigger *Manual* (or *Automatic*).
-2. Configure build: **Use a configuration file** (it reads `apprunner.yaml`).
-3. Configure service: name `powerline`, 1 vCPU / 2 GB is plenty, **port 3000**, health check path **`/healthz`**.
-4. Environment variables (Service settings → Environment variables), at minimum:
+Environment the container understands (all optional beyond `API_TOKENS`):
 
 | Variable | Value |
 | --- | --- |
-| `API_TOKENS` | `judge:<long random secret>` — the secret goes into the Devpost testing instructions |
-| `ALLOWED_ORIGINS` | the host's origin, if a browser host will connect (e.g. `https://inspector.mcpjam.com`) |
+| `API_TOKENS` | `judge:<long random secret>` — the secret goes into the Devpost testing instructions; the same pair works on the OAuth consent page |
+| `ALLOWED_ORIGINS` | a browser host's origin, if one will connect (e.g. `https://inspector.mcpjam.com`) |
 | `STORE` / `DYNAMO_TABLE` / `AWS_REGION` | `dynamodb` / `powerline` / `us-east-1` |
 | `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
 | `SIM_START_SOC` / `SIM_CLOCK_START` | leave unset for a live clock, or set for a scripted demo state |
+| `WEATHER_LAT` / `WEATHER_LON` | coordinates for the weather-aware solar curve (live clock only) |
+| `PUBLIC_URL` | not needed here — the load balancer sends `x-forwarded-proto` and the public `Host` |
 
-5. Security → **Instance role**: a role with `AmazonDynamoDBFullAccess` (or a policy scoped to the table) and `AmazonBedrockFullAccess` (or `bedrock:InvokeModel` on the model). App Runner → the role's trust policy must allow `tasks.apprunner.amazonaws.com`.
-6. Create. First build takes ~5 minutes; the service URL is `https://<id>.<region>.awsapprunner.com`. Check `https://<url>/healthz` and open `https://<url>/` for the status page.
+Cost with the hackathon credits: effectively zero (one 1 vCPU / 2 GB task plus the load balancer).
+Delete the service when the judging period ends.
 
-Cost with the hackathon credits: effectively zero. Pause the service from the console when not demoing.
-
-### 2b. The same thing as a container
+### 2b. The same image from Amazon ECR instead of GitHub
 
 ```bash
 aws ecr create-repository --repository-name powerline
 docker build -t powerline . && docker tag powerline:latest <acct>.dkr.ecr.us-east-1.amazonaws.com/powerline:latest
 aws ecr get-login-password | docker login --username AWS --password-stdin <acct>.dkr.ecr.us-east-1.amazonaws.com
 docker push <acct>.dkr.ecr.us-east-1.amazonaws.com/powerline:latest
+IMAGE=<acct>.dkr.ecr.us-east-1.amazonaws.com/powerline:latest API_TOKEN_SECRET=… bash scripts/deploy-ecs-express.sh
 ```
 
-Create an App Runner service from that image with port `3000`, health check path `/healthz`, and environment:
-
-| Variable | Value |
-| --- | --- |
-| `HOST` | `0.0.0.0` |
-| `API_TOKENS` | `home:<long random secret>` (one entry per household) |
-| `STORE` | `dynamodb` — App Runner instances are replaced; disk is not durable there |
-| `DYNAMO_TABLE` / `AWS_REGION` | `powerline` / `us-east-1` (run `npm run dynamo:init` once) |
-| `POWER_SOURCE` + credentials | `victron` + `VRM_TOKEN` + `VRM_SITE_ID`, or `growatt` + `GROWATT_TOKEN` |
-| `BEDROCK_MODEL_ID` | e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| `TZ_OFFSET` | the household's UTC offset |
-
-Give the service's instance role `dynamodb:GetItem/PutItem/UpdateItem` on the table and
-`bedrock:InvokeModel` on the model. App Runner terminates TLS and provides the HTTPS URL.
-
 **Streamable HTTP needs sticky sessions or a single instance.** Sessions live in the process
-that opened them (`MCP-Session-Id` → transport). Run one instance, or put a session-affinity
-load balancer in front. A client whose session lands on another instance gets `404` and
+that opened them (`MCP-Session-Id` → transport). The deploy script pins one task for that reason; scale out only behind a session-affinity
+load balancer. A client whose session lands on another instance gets `404` and
 re-initialises — correct per spec, but it loses the open SSE stream until it reconnects.
 
 ## 3. Your own box (Raspberry Pi next to the inverter)

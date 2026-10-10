@@ -2,6 +2,9 @@
 
 All work below happened inside the hackathon submission window (31 Aug – 23 Oct 2026). The repository was created on 9 September 2026; nothing pre-dates it.
 
+## 0.13.1 — 10 Oct 2026
+- Deploy path moved from AWS App Runner (closed to new customers since April 2026) to **Amazon ECS Express Mode**: `.github/workflows/image.yml` publishes the image to GitHub's registry on every push; `scripts/deploy-ecs-express.sh` creates the roles and the service from AWS CloudShell and prints the public HTTPS URL. `apprunner.yaml` and the App Runner script removed.
+
 ## 0.13.0 — 8 Oct 2026
 - **OAuth 2.1 account linking** (`src/oauth.ts`): protected-resource and authorization-server discovery, dynamic client registration (public clients; loopback/https redirects), consent page, authorization-code grant with mandatory PKCE S256 and single-use codes, rotating refresh tokens, `resource_metadata` on every 401. The official MCP client completes the whole flow in `test/oauth.test.ts`; negative cases covered.
 - **Weather-aware solar** (`src/weather.ts`): Open-Meteo shortwave radiation for `WEATHER_LAT/LON` becomes the PV forecast (performance ratio 0.8), cached, deadline-bounded, falling back to the clear-sky curve; the dashboard footer says which source is in use.
