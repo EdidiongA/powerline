@@ -102,8 +102,9 @@ const reaper = setInterval(() => {
 }, REAP_EVERY_MS);
 reaper.unref?.();
 
-function originAllowed(origin: string | undefined): boolean {
+function originAllowed(origin: string | undefined, self?: string): boolean {
   if (!origin) return true; // non-browser clients omit Origin
+  if (self && origin === self) return true; // the server's own pages (/demo) are always allowed to talk to it
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const { hostname } = new URL(origin);
@@ -244,7 +245,7 @@ const LLM_RATE = { windowMs: 60_000, max: Number(process.env.DEMO_LLM_PER_MINUTE
 let llmCalls: number[] = [];
 app.post("/demo/llm", async (c) => {
   const origin = c.req.header("origin") ?? null;
-  if (!originAllowed(origin ?? undefined)) return c.json({ error: "Forbidden origin" }, 403);
+  if (!originAllowed(origin ?? undefined, originOf(c.req.url, { get: (n) => c.req.header(n) }))) return c.json({ error: "Forbidden origin" }, 403);
   if (!auth.authenticate(c.req.header("authorization"))) return withCors(c.json({ error: "Unauthorized" }, 401, { "WWW-Authenticate": challenge(originOf(c.req.url, { get: (n) => c.req.header(n) }), c.req.header("authorization")) }), origin);
   if (Number(c.req.header("content-length") ?? 0) > 200_000) return withCors(c.json({ error: "Request body too large" }, 413), origin);
   const now = Date.now(); llmCalls = llmCalls.filter((t) => now - t < LLM_RATE.windowMs);
@@ -296,7 +297,7 @@ app.all("/mcp", async (c) => {
   const req = c.req.raw;
   const origin = req.headers.get("origin");
   const principal = auth.authenticate(req.headers.get("authorization"));
-  if (!originAllowed(origin ?? undefined)) {
+  if (!originAllowed(origin ?? undefined, originOf(req.url, { get: (n) => req.headers.get(n) ?? undefined }))) {
     return c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Forbidden origin" } }, 403);
   }
   if (!principal) {

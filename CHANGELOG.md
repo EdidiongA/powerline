@@ -3,6 +3,7 @@
 All work below happened inside the hackathon submission window (31 Aug – 23 Oct 2026). The repository was created on 9 September 2026; nothing pre-dates it.
 
 ## 0.13.1 — 10 Oct 2026
+- Fix: the server's own `/demo` page was refused with "Forbidden origin" on a public deployment (the Origin check only knew localhost and `ALLOWED_ORIGINS`); same-origin requests, judged through the forwarded headers, are now always allowed. Found on the first ECS deploy; tested.
 - Deploy path moved from AWS App Runner (closed to new customers since April 2026) to **Amazon ECS Express Mode**: `.github/workflows/image.yml` publishes the image to GitHub's registry on every push; `scripts/deploy-ecs-express.sh` creates the roles and the service from AWS CloudShell and prints the public HTTPS URL. `apprunner.yaml` and the App Runner script removed.
 
 ## 0.13.0 — 8 Oct 2026

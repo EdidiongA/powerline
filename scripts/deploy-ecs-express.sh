@@ -30,7 +30,7 @@ find_service() {
 if [[ "${1:-}" == "delete" ]]; then
   arn=$(find_service)
   [[ -z "$arn" ]] && { echo "no service named $SERVICE in $REGION"; exit 0; }
-  aws ecs delete-express-gateway-service --region "$REGION" --service-arn "$arn" --monitor-resources >/dev/null
+  aws ecs delete-express-gateway-service --region "$REGION" --service-arn "$arn" --monitor-resources --monitor-mode TEXT-ONLY >/dev/null
   echo "deleting $arn (takes a few minutes; also removes the load balancer it created)"; exit 0
 fi
 
@@ -68,7 +68,8 @@ PY
 existing=$(find_service)
 if [[ -n "$existing" ]]; then
   echo "Updating $SERVICE in $REGION to $IMAGE…"
-  aws ecs update-express-gateway-service --region "$REGION" --service-arn "$existing" --primary-container "$container" --monitor-resources >/dev/null
+  aws ecs update-express-gateway-service --region "$REGION" --service-arn "$existing" --primary-container "$container" \
+    $( [[ -n "$TASK_ROLE_ARN" ]] && printf -- '--task-role-arn %s' "$TASK_ROLE_ARN" ) --monitor-resources --monitor-mode TEXT-ONLY >/dev/null
   arn=$existing
 else
   echo "Creating ECS Express service '$SERVICE' in $REGION from $IMAGE…"
@@ -81,10 +82,21 @@ else
     --cpu 1024 --memory 2048 --cpu-architecture X86_64 \
     --health-check-path /healthz \
     --scaling-target '{"minTaskCount":1,"maxTaskCount":1}' \
-    --monitor-resources \
+    --monitor-resources --monitor-mode TEXT-ONLY \
     --query 'service.serviceArn' --output text)
 fi
-echo "Service: $arn — waiting for it to become ACTIVE (≈5 min; the load balancer takes most of it)…"
+echo "Service: $arn — waiting for the deployment to finish (≈3–6 min)…"
+sleep 20
+# A rolling deployment keeps the old task serving until the new one is healthy; wait for the swap so the probe below sees the new settings.
+dep=$(aws ecs describe-express-gateway-service --region "$REGION" --service-arn "$arn" --query 'service.currentDeployment' --output text 2>/dev/null || true)
+if [[ -n "$dep" && "$dep" != "None" ]]; then
+  for i in $(seq 1 60); do
+    ds=$(aws ecs describe-service-deployments --region "$REGION" --service-deployment-arns "$dep" --query 'serviceDeployments[0].status' --output text 2>/dev/null || echo UNKNOWN)
+    [[ "$ds" == "SUCCESSFUL" || "$ds" == "UNKNOWN" ]] && break
+    [[ "$ds" == *FAILED* || "$ds" == *ROLLED_BACK* ]] && { echo "deployment $ds — most common cause: the image is private on GitHub, or the task crashed; see the ECS console → powerline → Deployments"; exit 1; }
+    sleep 10
+  done
+fi
 for i in $(seq 1 90); do
   status=$(aws ecs describe-express-gateway-service --region "$REGION" --service-arn "$arn" --query 'service.status.statusCode' --output text 2>/dev/null || echo PENDING)
   [[ "$status" == "ACTIVE" ]] && break
@@ -99,5 +111,8 @@ echo "Powerline is live:  https://$url/          (status page)"
 echo "Simulated host:     https://$url/demo      (judges open this)"
 echo "MCP endpoint:       https://$url/mcp       (OAuth-capable hosts link here with no token)"
 [[ -n "$API_TOKEN_SECRET" ]] && echo "Bearer token:       $API_TOKEN_SECRET   ← Devpost testing instructions (household 'judge' on the consent page)"
-for i in $(seq 1 30); do curl -fsS "https://$url/healthz" && { echo; exit 0; }; sleep 10; done
-echo "(the URL is up but /healthz did not answer yet — give it another minute)"
+# The service reports ACTIVE before its load balancer and DNS record exist; the name resolves a few minutes later.
+echo "Waiting for the URL to come up (DNS + first task, usually 3–8 minutes)…"
+for i in $(seq 1 90); do curl -fsS "https://$url/healthz" 2>/dev/null && { echo; echo "Live. Open https://$url/demo"; exit 0; }; sleep 10; done
+echo "Still not answering after 15 minutes. Check: aws ecs describe-express-gateway-service --region $REGION --service-arn $arn --query service.status"
+echo "and the service's Deployments tab in the ECS console (a private image shows there as CannotPullContainerError)."

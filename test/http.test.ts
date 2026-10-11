@@ -25,6 +25,13 @@ test("CORS preflight is answered before auth, only for allowed origins, and expo
     const evil = await fetch(`${s.url}/mcp`, { method: "OPTIONS", headers: { origin: "https://evil.example" } });
     assert.equal(evil.status, 403);
     assert.equal(evil.headers.get("access-control-allow-origin"), null);
+    // The server's own /demo page is served from a public, non-localhost origin in production; it must never be refused.
+    const evilPost = await fetch(`${s.url}/mcp`, { method: "POST", headers: { ...jsonHeaders, origin: "https://evil.example" }, body: initBody });
+    assert.equal(evilPost.status, 403);
+    const selfPost = await fetch(`${s.url}/mcp`, { method: "POST", headers: { ...jsonHeaders, origin: "https://pl.example.org", "x-forwarded-proto": "https", "x-forwarded-host": "pl.example.org" }, body: initBody });
+    assert.notEqual(selfPost.status, 403, "same-origin (behind a load balancer) is allowed without ALLOWED_ORIGINS");
+    const selfLlm = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: { "content-type": "application/json", origin: "https://pl.example.org", "x-forwarded-proto": "https", "x-forwarded-host": "pl.example.org" }, body: "{}" });
+    assert.notEqual(selfLlm.status, 403);
 
     const noToken = await fetch(`${s.url}/mcp`, { method: "POST", headers: { ...jsonHeaders, origin: "https://host.example" }, body: initBody });
     assert.equal(noToken.status, 401);
