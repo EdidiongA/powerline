@@ -154,7 +154,7 @@ async function turn(userText: string) {
         catch (e) { r = { content: [{ type: "text", text: `Tool ${c.name} failed: ${(e as Error).message}` }], isError: true }; }
         const text = textOf(r) || (r.isError ? "The tool returned an error." : "Done.");
         used.push(c.name);
-        if (reply.mode === "rules" && reply.text) alexa(reply.text);
+        if (reply.mode === "rules" && reply.text && c === reply.toolCalls[0]) alexa(reply.text); // the lead-in once, not once per call
         if (tool && getToolUiResourceUri(tool) && !r.isError) { try { await renderCard(tool, c.input, r); } catch (e) { console.warn("card failed", e); } }
         if (reply.mode === "rules") alexa(text, `<code>${esc(c.name)}</code>${r._meta && (r._meta as { bedrock?: boolean }).bedrock === false && c.name === "evening_briefing" ? " · plain facts (Bedrock not configured)" : ""}`);
         results.push({ toolResult: { toolUseId: c.id, content: [{ text: text.slice(0, 4000) }], status: r.isError ? "error" : "success" } });

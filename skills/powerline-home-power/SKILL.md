@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires a running Powerline MCP server (Streamable HTTP, spec 2025-11-25) connected to the host. No other tools needed.
 metadata:
   author: EdidiongA
-  version: "0.13.1"
+  version: "0.13.2"
   repo: https://github.com/EdidiongA/powerline
 ---
 

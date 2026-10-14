@@ -2,7 +2,9 @@
  * Rule-based intent router — the no-model fallback for the simulated host, and a readable
  * statement of the phrasings Powerline expects. Pure, so it is unit-tested in isolation.
  */
-export interface RuleTurn { tool: string | null; input: Record<string, unknown>; text: string }
+export interface RuleTurn { tool: string | null; input: Record<string, unknown>; text: string; also?: Array<{ tool: string; input: Record<string, unknown> }> }
+
+const MENU = "I didn't catch that. Try “how's the power?”, “can I run the iron for 30 minutes?”, “plan my power for today”, “how did we do this week?”, “will the battery last till morning?” — or “give me everything” for the full picture.";
 
 const num = (s: string, re: RegExp) => { const m = re.exec(s); return m ? Number(m[1]) : undefined; };
 // Punctuation goes, decimals stay ("4.5 kw" must survive; a trailing "." must not).
@@ -13,6 +15,14 @@ export function routeByRules(utterance: string, available: string[]): RuleTurn {
   const has = (t: string) => available.includes(t);
   const call = (tool: string, input: Record<string, unknown> = {}, text = ""): RuleTurn => (has(tool) ? { tool, input, text } : { tool: null, input: {}, text: `The ${tool} tool is not available on this server.` });
   if (!u) return { tool: null, input: {}, text: "Say something like “how's the power?”, “can I run the iron?”, or “plan my power for today”." };
+
+  // "Do all of them", "give me everything", "full rundown": every read-only view at once. Never arms or changes anything.
+  if (/\b(all of (them|it|those|that)|do all|everything|every thing|full (picture|rundown|run down|report|update)|the works|rundown|run me through|overview)\b/.test(u) && !/\b(forget|remove|delete|cancel)\b/.test(u)) {
+    const views = (["power_status", "plan_day", "outage_outlook", "energy_report"] as const).filter(has);
+    if (views.length === 0) return { tool: null, input: {}, text: "None of the read-only tools are available on this server." };
+    const [first, ...rest] = views.map((t) => ({ tool: t as string, input: t === "energy_report" ? { period: "week" } : {} }));
+    return { tool: first.tool, input: first.input, also: rest, text: "Here's the full picture: the power right now, today's plan, how long we'd last without the grid, and the week so far." };
+  }
 
   // Setup: "set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve"
   if (/\b(set ?up|setup|configure)\b/.test(u) && /\b(solar|system|array|battery|inverter)\b/.test(u)) {
@@ -59,10 +69,15 @@ export function routeByRules(utterance: string, available: string[]): RuleTurn {
     return call("energy_report", { period });
   }
   if (/\b(how long|last)\b.*\b(grid|nepa|light|outage|goes|off)\b|\b(outage|is there light|light tonight)\b/.test(u)) return call("outage_outlook");
-  if (/\b(briefing|outlook|summary|how are we for tonight|tonight)\b/.test(u)) return call("evening_briefing");
-  // Planning
-  if (/\bplan\b/.test(u)) return call("plan_day");
+  // Planning (before the time-word rules, so "plan tomorrow morning" plans)
+  if (/\b(plan|schedule)\b/.test(u) || /\bwhen (should|can|do) i\b/.test(u)) return call("plan_day");
+  // Briefings and "will it last": the forecast through the night, in one paragraph
+  if (/\b(brief|briefing|outlook|summary|summarise|summarize|forecast|how are we for tonight|tonight|tomorrow|morning|overnight|night)\b/.test(u)
+    || /\b(will|would|does|do)\b.*\b(last|hold|survive|make it)\b/.test(u) || /\benough (power|battery|charge|juice)\b/.test(u)) return call("evening_briefing");
   // Status (default for power questions)
-  if (/\b(power|battery|solar|charge|status|how are we|how's|hows|how is)\b/.test(u)) return call("power_status");
-  return { tool: null, input: {}, text: "I can tell you how the power is, whether you can run something, plan the day, arm reminders, report on the week, or give an outlook. What would you like?" };
+  if (/\b(power|battery|solar|charge|status|how are we|how's|hows|how is|electricity|energy|inverter|update|situation|where are we|panels?|grid|light|nepa|phcn)\b/.test(u)) return call("power_status");
+  // Greetings and "what can you do" get the menu; anything else gets the menu with examples (never the same dead end twice in a row is up to the host, which shows the hint chips).
+  return { tool: null, input: {}, text: /\b(hi|hello|hey|help|what can you do|who are you|menu|options)\b/.test(u)
+    ? "I'm Powerline. I can tell you how the power is, whether you can run an appliance, plan the day around the sun, arm reminders, report on the week, or give the overnight outlook — or say “give me everything”."
+    : MENU };
 }

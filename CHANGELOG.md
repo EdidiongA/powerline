@@ -2,6 +2,9 @@
 
 All work below happened inside the hackathon submission window (31 Aug – 23 Oct 2026). The repository was created on 9 September 2026; nothing pre-dates it.
 
+## 0.13.2 — 12 Oct 2026
+- **Free-form requests in the simulated host.** Found on the live demo: without Bedrock, "give me a brief of what it looks like by tomorrow morning" and "do all of them" both got the same menu. The no-model router now understands briefings and "will it last" phrasings, lets planning win over time words, knows more status synonyms, and turns "do all of them / give me everything / full rundown" into four read-only tools in one turn (never arming anything); an unknown request gets concrete example phrasings instead of a vague menu. The Bedrock system prompt gets the same mapping and is told never to answer with only a menu. Router tests cover both original sentences verbatim; the headless-browser check asks them on every push. 112 tests.
+
 ## 0.13.1 — 10 Oct 2026
 - Fix: the server's own `/demo` page was refused with "Forbidden origin" on a public deployment (the Origin check only knew localhost and `ALLOWED_ORIGINS`); same-origin requests, judged through the forwarded headers, are now always allowed. Found on the first ECS deploy; tested.
 - Deploy path moved from AWS App Runner (closed to new customers since April 2026) to **Amazon ECS Express Mode**: `.github/workflows/image.yml` publishes the image to GitHub's registry on every push; `scripts/deploy-ecs-express.sh` creates the roles and the service from AWS CloudShell and prints the public HTTPS URL. `apprunner.yaml` and the App Runner script removed.

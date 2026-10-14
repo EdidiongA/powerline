@@ -27,6 +27,8 @@ export const SYSTEM_PROMPT = [
   "For reports (how did we do, what did the grid cost) call energy_report; for 'how long can we last if the grid goes' call outage_outlook; for a briefing or outlook call evening_briefing.",
   "When a tool renders a card (dashboard, planner, report), do not repeat every number on it — say the one thing that matters and point at the card.",
   "If the household has not been set up (profileIsDefault is true), give the answer and add once: say 'set up my solar' to use your own system.",
+  "People speak loosely. Map what they mean to the tools: 'what does tomorrow morning look like', 'will we last the night' → evening_briefing; 'when should I do the laundry' → plan_day; 'do all of them', 'give me everything' → call power_status, plan_day, outage_outlook and energy_report together, never arm_plan unless asked.",
+  "If a request is outside home power, say so in one sentence and offer the closest thing you can do. Never answer a request by only listing what you can do.",
 ].join(" ");
 
 export const llmEnabled = Boolean(MODEL_ID);
@@ -111,5 +113,7 @@ function rulesTurn(messages: Message[], tools: ToolSpec[]): LlmReply {
   const toolResults = last.role === "user" ? last.content.flatMap((c) => ("toolResult" in c && c.toolResult ? c.toolResult.content.map((x) => x.text) : [])) : [];
   if (toolResults.length) return { mode: "rules", text: toolResults.join(" "), toolCalls: [], stop: "end_turn" };
   const turn: RuleTurn = routeByRules(lastUserText, tools.map((t) => t.name));
-  return { mode: "rules", text: turn.text, toolCalls: turn.tool ? [{ id: `rule-${Date.now()}`, name: turn.tool, input: turn.input }] : [], stop: turn.tool ? "tool_use" : "end_turn" };
+  const calls = turn.tool ? [{ tool: turn.tool, input: turn.input }, ...(turn.also ?? [])] : [];
+  const stamp = Date.now();
+  return { mode: "rules", text: turn.text, toolCalls: calls.map((c, i) => ({ id: `rule-${stamp}-${i}`, name: c.tool, input: c.input })), stop: calls.length ? "tool_use" : "end_turn" };
 }

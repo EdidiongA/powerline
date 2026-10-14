@@ -55,6 +55,14 @@ try {
   dialogs.some((m) => /already armed/.test(m)) ? console.log("✓ elicitation surfaced as a dialog and 'no' was honoured") : fail(`no elicitation dialog (${JSON.stringify(dialogs)})`);
   await ask("How did we do this week?", 3000);
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /run the|Battery|Grid/.test(t.textContent)), null, { timeout: 90000 }).then(() => console.log("✓ a pushed notification landed as a toast")).catch(() => fail("no notification toast within 90 s"));
+  // Free-form: "give me everything" runs four read-only tools in one turn and renders their cards.
+  const before = (await page.$$(".card iframe")).length;
+  await ask("Give me everything", 6000);
+  const after4 = (await page.$$(".card iframe")).length;
+  after4 - before >= 3 ? console.log(`✓ "give me everything" rendered ${after4 - before} cards in one turn`) : fail(`"give me everything" rendered ${after4 - before} cards`);
+  await ask("Give me a brief of what it looks like by tomorrow morning", 2500);
+  const lastMsg = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa")].pop()?.textContent ?? "");
+  /didn't catch|What would you like/.test(lastMsg) ? fail(`free-form briefing fell through to the menu: ${lastMsg.slice(0, 120)}`) : console.log("✓ a free-form briefing request was understood");
   // A redeploy or a reaped session must not strand the page: restart the server, ask again, expect a fresh answer.
   server.kill("SIGTERM"); await new Promise((r) => server.on("exit", r));
   server = await boot();

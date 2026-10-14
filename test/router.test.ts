@@ -34,8 +34,39 @@ test("router: the README phrasings map to the right tools with the right argumen
 test("router: empty, nonsense and unavailable tools are handled with a sentence, never a crash", () => {
   assert.equal(r("").tool, null); assert.match(r("").text, /how's the power/);
   assert.equal(r("tell me a joke").tool, null);
+  assert.match(r("tell me a joke").text, /give me everything/, "an unknown request gets concrete examples, not a vague menu");
+  assert.match(r("hello").text, /I'm Powerline/);
   const limited = routeByRules("plan my day", ["power_status"]);
   assert.equal(limited.tool, null); assert.match(limited.text, /not available/);
   assert.doesNotThrow(() => r("💡💡💡 ???"));
   assert.doesNotThrow(() => r("x".repeat(10000)));
+});
+
+test("router: free-form phrasings people actually type (found on the live demo)", () => {
+  // The two that failed on 12 Oct.
+  assert.equal(r("Give me a brief of what it looks like by tomorrow morning").tool, "evening_briefing");
+  const all = r("Do all of them");
+  assert.deepEqual([all.tool, ...(all.also ?? []).map((a) => a.tool)], ["power_status", "plan_day", "outage_outlook", "energy_report"]);
+  assert.ok(!(all.also ?? []).some((a) => a.tool === "arm_plan"), "'everything' never arms or changes state");
+  assert.equal(r("give me everything").tool, "power_status");
+  assert.equal(r("full rundown please").also?.length, 3);
+  // Will it last / enough power
+  assert.equal(r("will the battery last till morning?").tool, "evening_briefing");
+  assert.equal(r("do we have enough power for tonight").tool, "evening_briefing");
+  assert.equal(r("what's the forecast").tool, "evening_briefing");
+  // Plan wins over time words
+  assert.equal(r("plan tomorrow morning for me").tool, "plan_day");
+  assert.equal(r("when should I do the laundry").tool, "plan_day");
+  // Status synonyms
+  assert.equal(r("what's the electricity situation").tool, "power_status");
+  assert.equal(r("give me an update").tool, "power_status");
+  // Existing intents still win where they did
+  assert.equal(r("How long can we last if the grid goes?").tool, "outage_outlook");
+  assert.equal(r("is there light tonight").tool, "outage_outlook");
+  assert.deepEqual(r("NEPA just went off").input, { on: false });
+  assert.equal(r("cancel everything").also, undefined, "a cancel is never turned into the read-everything bundle");
+  // Availability is respected in the multi-call path
+  const only = routeByRules("do all of them", ["power_status", "energy_report"]);
+  assert.deepEqual([only.tool, ...(only.also ?? []).map((a) => a.tool)], ["power_status", "energy_report"]);
+  assert.equal(routeByRules("do all of them", ["arm_plan"]).tool, null);
 });

@@ -1,7 +1,7 @@
 # Powerline — Alexa+ home power copilot
 
 [![CI](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml/badge.svg)](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-111%20%2B%20headless%20browser-1e9e5a)](test/)
+[![tests](https://img.shields.io/badge/tests-112%20%2B%20headless%20browser-1e9e5a)](test/)
 [![MCP 2025-11-25](https://img.shields.io/badge/MCP-2025--11--25%20%C2%B7%20Streamable%20HTTP-1e9e5a)](https://modelcontextprotocol.io)
 [![MCP Apps](https://img.shields.io/badge/MCP%20Apps-3%20cards%20%C2%B7%20built--in%20host-4b7bb8)](src/ui/)
 [![AWS](https://img.shields.io/badge/AWS-Bedrock%20%C2%B7%20DynamoDB%20%C2%B7%20App%20Runner-e8a33d)](docs/DEPLOY.md)
@@ -33,7 +33,7 @@ anyone can try it in a browser.
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
 | **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS) |
-| **Proven** | 111 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
+| **Proven** | 112 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
 | **For agents** | Agent Skill (`skills/`), prompts, household resource, 24-entry friction log, docs PR upstream |
 
 Supported inverter platforms: **Growatt** (ShinePhone API token) and **Victron Energy** (VRM Portal access
@@ -78,7 +78,7 @@ Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp` — [MCPJam In
 7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00 — run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600` to watch it land in about a minute
 8. **Use the evening_briefing tool** → one spoken paragraph (Bedrock when `BEDROCK_MODEL_ID` is set)
 
-Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (111; only the end-to-end suite touches the network, and only on localhost).
+Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (112; only the end-to-end suite touches the network, and only on localhost).
 Live inverter data: `POWER_SOURCE=victron VRM_DEMO=1 npm start` reads Victron's public demo installation.
 
 ## Quick start
@@ -90,7 +90,7 @@ npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
 npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
 npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
-npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 111 tests; e2e drives the real process with the official client
+npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 112 tests; e2e drives the real process with the official client
 ```
 
 Live telemetry:
@@ -303,7 +303,7 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 - [x] `arm_plan`: reminders pushed at each start time without being asked
 - [x] Bedrock briefing with plain-facts fallback; DynamoDB store with conditional writes
 - [x] Per-household bearer tokens (fail-closed), session ↔ household binding, CORS for browser hosts
-- [x] Docker image + compose; CI on Ubuntu + Windows; 111 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
+- [x] Docker image + compose; CI on Ubuntu + Windows; 112 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
 - [x] MCP prompts, an Agent Skill, tool annotations, a household resource, and elicitation before the one destructive action
 - [x] History: hourly samples, energy reports with cost, outage outlook, and a forecast that learns the household's own load shape and real solar yield
 - [x] `scripts/deploy-ecs-express.sh` — one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI
