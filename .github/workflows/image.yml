@@ -4,7 +4,7 @@ name: image
 # is enough. The published image is what scripts/deploy-ecs-express.sh runs on AWS.
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ["v*"]
   workflow_dispatch:
 

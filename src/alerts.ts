@@ -95,11 +95,13 @@ export function startAlertMonitor(
       if (h.armedPlan) {
         // A plan whose every item has fired or is more than a day old is finished. Clear it so
         // the planner card stops showing yesterday's plan as armed.
-        const finished = h.armedPlan.items.every((i) => i.firedAt || (Number.isFinite(nowMs) && nowMs - Date.parse(i.startAt) > 24 * 3_600_000));
+        // Finished = every start time is comfortably behind us (not "every item fired": another session's
+        // delivery must not clear a plan this session has not announced yet).
+        const finished = Number.isFinite(nowMs) && h.armedPlan.items.every((i) => nowMs - Date.parse(i.startAt) > 3 * 3_600_000);
         if (finished) {
           const stale = h.armedPlan.armedAt;
           await updateHousehold(userId, (hh) => { if (hh.armedPlan?.armedAt === stale) hh.armedPlan = null; }); // never wipe a plan armed since this tick's read
-        } else for (const item of dueReminders(h.armedPlan.items, t.at, Math.max(20, gapMin + 1))) {
+        } else for (const item of dueReminders(h.armedPlan.items, t.at, Math.max(20, gapMin + 1), true)) {
           const key = `${item.name}@${item.startAt}`;
           if (remindedHere.has(key)) continue;
           remindedHere.add(key);

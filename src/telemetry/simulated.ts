@@ -16,6 +16,7 @@ export interface SimOptions {
   seed?: number;
   clockStart?: Date;
   speed?: number; // simulated seconds per real second
+  cutoffSocPct?: number; // the inverter's low-battery disconnect; below it the loads drop, the battery does not go to zero
 }
 
 export function clearSkyPvW(hourOfDay: number, arrayKw: number): number {
@@ -70,16 +71,21 @@ export class SimulatedSource implements TelemetrySource {
 
     // Grid covers load when present; battery absorbs the rest.
     const gridW = grid ? Math.max(0, load - pv) : 0;
-    const batteryW = pv + gridW - load;
+    let batteryW = pv + gridW - load;
     const dtH = (now - this.lastTick) / 3.6e6;
     this.lastTick = now;
+    const cutoff = Math.min(50, Math.max(0, this.opts.cutoffSocPct ?? 10));
+    // Below the cut-off a real inverter disconnects the loads rather than flattening the battery:
+    // the house goes dark except for what the grid or the sun can carry directly.
+    let served = load;
+    if (batteryW < 0 && this.soc <= cutoff) { served = Math.min(load, pv + gridW); batteryW = 0; }
     const dSoc = (batteryW * dtH) / (this.opts.batteryKwh * 1000) * 100;
-    this.soc = Math.min(100, Math.max(0, this.soc + dSoc));
+    this.soc = Math.min(100, Math.max(batteryW < 0 ? cutoff : 0, this.soc + dSoc));
 
     return {
       at: d.toISOString(),
       pv_w: pv,
-      load_w: load,
+      load_w: served,
       battery_w: Math.round(batteryW),
       soc_pct: Math.round(this.soc * 10) / 10,
       grid_w: grid ? gridW : 0,

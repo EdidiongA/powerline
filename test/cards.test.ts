@@ -190,6 +190,14 @@ test("report card renders totals, day bars, cost and the learning line; empty an
   assert.match(text, /own pattern \(7 days, array at 81% of clear-sky\)/);
   assert.equal(w.document.querySelectorAll(".bar.sun").length, 2);
   assert.equal(w.document.querySelectorAll("button[data-period]").length, 3);
+  // "7 days" always draws seven slots: days without readings are empty and dimmed, and the heading says how many have data.
+  const week = { ...report, period: "week", dates: ["2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"] };
+  w.__onresult({ structuredContent: week });
+  assert.equal(w.document.querySelectorAll(".day").length, 7);
+  assert.equal(w.document.querySelectorAll(".day.empty").length, 5);
+  assert.match(w.document.body.textContent ?? "", /readings on 2 of 7/);
+  w.__onresult({ structuredContent: { ...week, dates: "not-a-list" } });
+  assert.equal(w.document.querySelectorAll(".day").length, 2, "a bad dates field falls back to the days that exist");
 
   w.__onresult({ structuredContent: { ...report, period: "today", days: [], empty: true, learned: { loadProfile: false, pvFactor: null, days: 1 } } });
   assert.match(w.document.body.textContent ?? "", /No readings for today yet/);

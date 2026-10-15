@@ -116,3 +116,20 @@ test("a wrong token gets 401 before any session exists; a right one gets its own
     await lagos.client.close(); await office.client.close();
   } finally { await s.stop(); }
 });
+
+test("every open session hears its own reminder: two hosts for one household both get the 08:00 push", async () => {
+  const s = await boot({ SIM_START_SOC: "70", SIM_CLOCK_START: "2026-10-01T06:50:00Z", SIM_SPEED: "3000", ALERT_INTERVAL_MS: "1000" });
+  try {
+    const a = await connect(s.url), b = await connect(s.url);
+    await a.call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 });
+    await a.call("add_appliance", { name: "iron", watts: 2000, minutes: 30 });
+    await a.call("plan_day");
+    await a.call("arm_plan");
+    const deadline = Date.now() + 90_000;
+    while ((!a.notes.some((n) => n.kind === "reminder") || !b.notes.some((n) => n.kind === "reminder")) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 500));
+    assert.ok(a.notes.some((n) => n.kind === "reminder"), `session A got no reminder: ${JSON.stringify(a.notes)}`);
+    assert.ok(b.notes.some((n) => n.kind === "reminder"), `session B got no reminder: ${JSON.stringify(b.notes)}`);
+    assert.equal(a.notes.filter((n) => n.kind === "reminder").length, 1, "and each hears it exactly once");
+    await a.client.close(); await b.client.close();
+  } finally { await s.stop(); }
+});

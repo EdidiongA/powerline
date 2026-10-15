@@ -61,6 +61,9 @@ export class Authenticator {
 
   get householdCount(): number { return this.credentials.length; }
 
+  /** Every household this server serves: the configured ones, or the demo household when open. */
+  get householdIds(): string[] { return this.required ? [...new Set(this.credentials.map((c) => c.householdId))] : [this.fallback]; }
+
   /**
    * Resolve the household for a request. Returns null when a token is required and
    * absent or wrong. With no tokens configured, every request is the demo household.

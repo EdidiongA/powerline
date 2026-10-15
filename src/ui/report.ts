@@ -2,7 +2,7 @@ import { App } from "@modelcontextprotocol/ext-apps";
 
 interface Day { date: string; hours: number; solarKwh: number; loadKwh: number; gridHours: number; gridKwh: number; minSocPct: number; hoursBelowReserve: number; solarSharePct: number }
 interface Summary { solarKwh: number; loadKwh: number; gridKwh: number; gridHours: number; minSocPct: number; hoursBelowReserve: number; solarSharePct: number; gridCost: number | null; solarValue: number | null; currency: string | null }
-interface Report { period: "today" | "yesterday" | "week"; days: Day[]; summary: Summary; learned?: { loadProfile: boolean; pvFactor: number | null; days: number }; reserve: number; empty?: boolean }
+interface Report { period: "today" | "yesterday" | "week"; dates?: string[]; days: Day[]; summary: Summary; learned?: { loadProfile: boolean; pvFactor: number | null; days: number }; reserve: number; empty?: boolean }
 
 const root = document.getElementById("root")!;
 const status = document.getElementById("status")!;
@@ -27,21 +27,29 @@ function render(raw: Report) {
   const reserve = fin(raw.reserve, 20);
   const tabs = (["today", "yesterday", "week"] as const).map((p) => `<button data-period="${p}" aria-pressed="${p === period}">${TAB[p]}</button>`).join("");
   const max = Math.max(0.1, ...days.map((d) => Math.max(d.solarKwh, d.loadKwh)));
-  const bars = days.map((d) => `<div class="day" title="${esc(d.date)}: solar ${kwh(d.solarKwh)} kWh, house ${kwh(d.loadKwh)} kWh, grid ${d.gridHours} h, lowest ${d.minSocPct}%">
+  // Every calendar day of the period gets a slot; a day with no readings is drawn empty and dimmed, so "7 days" always shows seven.
+  const slots: string[] = Array.isArray(raw.dates) && raw.dates.every((x) => typeof x === "string") && raw.dates.length ? raw.dates : days.map((d) => d.date);
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const extra = days.filter((d) => !slots.includes(d.date)).map((d) => d.date); // readings outside the expected range still show
+  const bars = [...slots, ...extra].map((date) => {
+    const d = byDate.get(date);
+    if (!d) return `<div class="day empty" title="${esc(date)}: no readings"><div class="pair"><div class="bar none"></div></div><span class="lbl">${esc(period === "week" ? dayLabel(date) : date.slice(5))}</span></div>`;
+    return `<div class="day" title="${esc(d.date)}: solar ${kwh(d.solarKwh)} kWh, house ${kwh(d.loadKwh)} kWh, grid ${d.gridHours} h, lowest ${d.minSocPct}%">
       <div class="pair"><div class="bar sun" style="height:${Math.max(2, (d.solarKwh / max) * 100)}%"></div><div class="bar load${d.gridHours ? " gridded" : ""}" style="height:${Math.max(2, (d.loadKwh / max) * 100)}%"></div></div>
-      <span class="lbl">${esc(period === "week" ? dayLabel(d.date) : d.date.slice(5))}</span></div>`).join("");
+      <span class="lbl">${esc(period === "week" ? dayLabel(d.date) : d.date.slice(5))}</span></div>`;
+  }).join("");
   const low = s.hoursBelowReserve ? `<b style="color:var(--alarm)">${s.hoursBelowReserve} h</b> at or below the ${reserve}% reserve` : `never below the <b>${reserve}%</b> reserve`;
   const learned = raw.learned?.loadProfile ? `Forecast uses this home's own pattern (${fin(raw.learned.days)} days${raw.learned.pvFactor !== null && raw.learned.pvFactor !== undefined ? `, array at ${Math.round(fin(raw.learned.pvFactor, 1) * 100)}% of clear-sky` : ""})` : `Learning: ${fin(raw.learned?.days)} of 3 days before the forecast uses this home's own pattern`;
   root.innerHTML = `
     <div class="head"><h1>${TITLE[period]}</h1><div class="tabs" role="tablist">${tabs}</div></div>
-    ${raw.empty || days.length === 0 ? `<div class="placeholder">No readings for ${TITLE[period].toLowerCase()} yet. Powerline records one reading an hour while a session is open.</div>` : `
+    ${raw.empty || days.length === 0 ? `<div class="placeholder">No readings for ${TITLE[period].toLowerCase()} yet. Powerline records one reading an hour, whether or not anyone is connected.</div>` : `
     <dl class="strip" style="margin:0">
       <div><dt>Solar</dt><dd>${kwh(s.solarKwh)}<em>kWh</em></dd></div>
       <div><dt>House</dt><dd>${kwh(s.loadKwh)}<em>kWh</em></dd></div>
       <div><dt>Without grid</dt><dd>${Math.round(s.solarSharePct)}<em>%</em></dd></div>
       <div><dt>Grid on</dt><dd>${s.gridHours}<em>h</em></dd></div>
     </dl>
-    <div class="days"><h2>${period === "week" ? "By day" : "Hours of readings: " + days.reduce((a, d) => a + fin(d.hours), 0)}</h2>
+    <div class="days"><h2>${period === "week" ? (days.length < 7 ? `By day · readings on ${days.length} of 7` : "By day") : "Hours of readings: " + days.reduce((a, d) => a + fin(d.hours), 0)}</h2>
       <div class="bars">${bars}</div>
       <div class="legend"><span><i style="background:var(--sun)"></i>solar</span><span><i style="background:var(--ink-3);opacity:.55"></i>house</span><span><i style="background:var(--grid);opacity:.7"></i>house, grid on</span></div>
     </div>

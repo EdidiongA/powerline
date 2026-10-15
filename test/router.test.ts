@@ -70,3 +70,15 @@ test("router: free-form phrasings people actually type (found on the live demo)"
   assert.deepEqual([only.tool, ...(only.also ?? []).map((a) => a.tool)], ["power_status", "energy_report"]);
   assert.equal(routeByRules("do all of them", ["arm_plan"]).tool, null);
 });
+
+test("router: precedence and hostile input — events before appliances, reports before can-I-run, no quadratic regex", () => {
+  assert.deepEqual(r("note nepa took light").input, { on: false });
+  assert.deepEqual(r("we just got light").input, { on: true });
+  assert.equal(r("cancel everything").tool, "disarm_plan");
+  assert.equal(r("forget everything").tool, "disarm_plan");
+  assert.equal(r("set up reminders for the plan").tool, "arm_plan");
+  assert.equal(r("could you run the energy report").tool, "energy_report");
+  assert.equal(r("switch off the fridge").tool, null); assert.match(r("switch off the fridge").text, /can't switch/);
+  assert.deepEqual(r("can I run the washing machine right now").input, { appliance: "washing machine" });
+  const t0 = Date.now(); r("can " + "run ".repeat(14_900) + "5"); assert.ok(Date.now() - t0 < 200, "a pathological utterance must not stall the event loop");
+});

@@ -229,11 +229,13 @@ export interface DueCheckItem { name: string; startAt: string; firedAt?: string 
  * late is noise, not help) and which have not yet fired. Pure: safe to call from
  * every session's monitor; the store decides who marks it fired.
  */
-export function dueReminders<T extends DueCheckItem>(items: T[], nowIso: string, graceMinutes = 20): T[] {
+export function dueReminders<T extends DueCheckItem>(items: T[], nowIso: string, graceMinutes = 20, ignoreFired = false): T[] {
   const now = Date.parse(nowIso);
   if (Number.isNaN(now)) return [];
   return items.filter((i) => {
-    if (i.firedAt) return false;
+    // `firedAt` is shared household state: it tells the card an item has started. It is NOT a
+    // delivery receipt — several hosts may be open, and each must hear its own reminder.
+    if (i.firedAt && !ignoreFired) return false;
     const at = Date.parse(i.startAt);
     return !Number.isNaN(at) && at <= now && now - at <= graceMinutes * 60_000;
   });

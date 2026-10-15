@@ -51,3 +51,26 @@ test("repairHistory: a browser that lost a hop never sends Bedrock a non-alterna
   assert.deepEqual(repairHistory(fine), fine);
   assert.deepEqual(repairHistory([]), []);
 });
+
+test("a throttled Bedrock call is retried once; other failures surface", async () => {
+  let calls = 0;
+  _setBedrockSenderForTests(async () => { calls++; if (calls === 1) { const e = new Error("Too many requests"); (e as { name: string }).name = "ThrottlingException"; throw e; } return { stopReason: "end_turn", output: { message: { content: [{ text: "fine now" }] } } }; }, true);
+  const r = await nextTurn([{ role: "user", content: [{ text: "hi" }] }], []);
+  assert.equal(r.text, "fine now"); assert.equal(calls, 2);
+  calls = 0;
+  _setBedrockSenderForTests(async () => { calls++; throw new Error("AccessDeniedException: no model access"); }, true);
+  await assert.rejects(() => nextTurn([{ role: "user", content: [{ text: "hi" }] }], []), /AccessDenied/);
+  assert.equal(calls, 1, "a permissions error is not retried");
+});
+
+test("repairHistory: dropping an orphan never leaves two assistant turns adjacent; an unanswered multi-toolUse is dropped", () => {
+  const u = (text: string) => ({ role: "user" as const, content: [{ text }] });
+  const a2 = { role: "assistant" as const, content: [{ toolUse: { toolUseId: "x1", name: "power_status", input: {} } }, { toolUse: { toolUseId: "x2", name: "plan_day", input: {} } }] };
+  const r1 = { role: "user" as const, content: [{ toolResult: { toolUseId: "x1", content: [{ text: "ok" }], status: "success" as const } }] };
+  const fixed = repairHistory([u("hi"), a2, r1, u("next")]);
+  for (let i = 1; i < fixed.length; i++) assert.notEqual(fixed[i].role, fixed[i - 1].role, "roles alternate");
+  assert.ok(!fixed.some((m) => m.content.some((c) => "toolUse" in c)), "the half-answered toolUse pair is gone");
+  assert.equal(fixed[fixed.length - 1].role, "user");
+  const orphanMid = repairHistory([u("a"), { role: "assistant", content: [{ text: "t" }] }, { role: "user", content: [{ toolResult: { toolUseId: "zz", content: [{ text: "x" }], status: "success" as const } }] }, { role: "assistant", content: [{ text: "u" }] }, u("b")]);
+  for (let i = 1; i < orphanMid.length; i++) assert.notEqual(orphanMid[i].role, orphanMid[i - 1].role);
+});

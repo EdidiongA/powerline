@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires a running Powerline MCP server (Streamable HTTP, spec 2025-11-25) connected to the host. No other tools needed.
 metadata:
   author: EdidiongA
-  version: "0.13.2"
+  version: "0.13.4"
   repo: https://github.com/EdidiongA/powerline
 ---
 
@@ -59,7 +59,7 @@ between sessions. **Never estimate power figures yourself; every number comes fr
 
 > **User:** Can I iron now?
 > **Agent:** `can_i_run {appliance: "iron"}` → `{ok:false, minSocWithPct: 12, bestStartHour: 11}`
-> **Agent:** Not now — ironing would take the battery to 12 %, under your 20 % reserve. Best time is around 09:00 tomorrow, when the sun will cover it. Want me to plan the day and remind you?
+> **Agent:** *(it is 22:00)* Not now — ironing would take the battery to 12 %, under your 20 % reserve. Best time is around 09:00 tomorrow, when the sun will cover it. Want me to plan the day and remind you?
 
 ## Edge cases
 

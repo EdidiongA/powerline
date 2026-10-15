@@ -27,6 +27,7 @@ export const SYSTEM_PROMPT = [
   "For reports (how did we do, what did the grid cost) call energy_report; for 'how long can we last if the grid goes' call outage_outlook; for a briefing or outlook call evening_briefing.",
   "When a tool renders a card (dashboard, planner, report), do not repeat every number on it — say the one thing that matters and point at the card.",
   "If the household has not been set up (profileIsDefault is true), give the answer and add once: say 'set up my solar' to use your own system.",
+  "When the person reports the grid going off or coming back ('NEPA took light', 'we just got light'), call log_grid_event first; if it went off, also call outage_outlook. 'Switch off X' is not something you can do — say so in one sentence and offer can_i_run or plan_day instead.",
   "People speak loosely. Map what they mean to the tools: 'what does tomorrow morning look like', 'will we last the night' → evening_briefing; 'when should I do the laundry' → plan_day; 'do all of them', 'give me everything' → call power_status, plan_day, outage_outlook and energy_report together, never arm_plan unless asked.",
   "If a request is outside home power, say so in one sentence and offer the closest thing you can do. Never answer a request by only listing what you can do.",
 ].join(" ");
@@ -47,6 +48,7 @@ export function checkMessages(raw: unknown): Message[] | string {
   if (JSON.stringify(raw).length > MAX_CHARS) return "conversation too large";
   for (const m of raw as Message[]) {
     if (!m || (m.role !== "user" && m.role !== "assistant") || !Array.isArray(m.content) || m.content.length === 0) return "each message needs a role and content";
+    for (const c of m.content) if (c && typeof (c as { text?: unknown }).text === "string" && (c as { text: string }).text.length > 4_000) return "a single message is too long (4,000 characters)";
   }
   return raw as Message[];
 }
@@ -71,7 +73,21 @@ export function repairHistory(messages: Message[]): Message[] {
     const answered = i > 0 && out[i - 1].role === "assistant" && out[i - 1].content.some((c) => "toolUse" in c);
     if (hasResult && !answered) out[i].content = out[i].content.filter((c) => !("toolResult" in c));
   }
-  const kept = out.filter((m) => m.content.length > 0);
+  // Dropping orphans can leave two assistant turns adjacent; merge once more, and drop an assistant
+  // toolUse set that is not fully answered by the next message.
+  const kept: Message[] = [];
+  for (const m of out.filter((x) => x.content.length > 0)) {
+    const prev = kept[kept.length - 1];
+    if (prev && prev.role === m.role) { prev.content = [...prev.content, ...m.content]; continue; }
+    kept.push(m);
+  }
+  for (let i = kept.length - 1; i >= 0; i--) {
+    if (kept[i].role !== "assistant") continue;
+    const uses = kept[i].content.filter((c) => "toolUse" in c).map((c) => (c as { toolUse: { toolUseId: string } }).toolUse.toolUseId);
+    if (!uses.length) continue;
+    const answered = new Set((kept[i + 1]?.content ?? []).filter((c) => "toolResult" in c).map((c) => (c as { toolResult: { toolUseId: string } }).toolResult.toolUseId));
+    if (!uses.every((id) => answered.has(id))) { kept.splice(i, 1); if (kept[i]?.role === "user" && kept[i - 1]?.role === "user") { kept[i - 1].content = [...kept[i - 1].content, ...kept[i].content]; kept.splice(i, 1); } }
+  }
   while (kept.length && kept[0].role !== "user") kept.shift(); // conversations start with the user
   return kept;
 }
@@ -95,7 +111,15 @@ export async function nextTurn(messages: Message[], tools: ToolSpec[]): Promise<
     const client = new BedrockRuntimeClient({});
     send = (input) => client.send(new ConverseCommand(input as never), { abortSignal: AbortSignal.timeout(TIMEOUT_MS) }) as never;
   }
-  const res = await send(converseInput(messages, tools));
+  // Bedrock throttles bursts; one short retry turns a 503 into a half-second pause the person never notices.
+  let res: Awaited<ReturnType<Sender>>;
+  try { res = await send(converseInput(messages, tools)); }
+  catch (e) {
+    const name = (e as { name?: string }).name ?? "", msg = (e as Error).message ?? "";
+    if (!/Throttling|TooManyRequests|ServiceUnavailable|ModelNotReady/i.test(`${name} ${msg}`)) throw e;
+    await new Promise((r) => setTimeout(r, 1_500 + Math.random() * 1_000));
+    res = await send(converseInput(messages, tools));
+  }
   const blocks = res.output?.message?.content ?? [];
   const text = blocks.map((b) => (typeof b.text === "string" ? b.text : "")).filter(Boolean).join(" ").trim();
   const toolCalls: ToolCall[] = blocks.flatMap((b) => {

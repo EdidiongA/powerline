@@ -19,6 +19,8 @@ import { getStore, storeHealth } from "./store/index.js";
 import { cardHtml } from "./views.js";
 import { checkMessages, llmEnabled, nextTurn, type ToolSpec } from "./demo/llm.js";
 import { OAuthServer, consentPage } from "./oauth.js";
+import { startHistoryRecorder } from "./recorder.js";
+import { seedHousehold } from "./seed.js";
 
 const source = sourceFromEnv(); // shared across sessions so the simulator clock is continuous
 
@@ -138,7 +140,7 @@ const app = new Hono();
 app.get("/", async (c) => {
   const store = await storeHealth();
   const e = (v: unknown) => String(v).replace(/[<&>"]/g, (ch) => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;", '"': "&quot;" }[ch]!));
-  const endpoint = `${new URL(c.req.url).origin}/mcp`;
+  const endpoint = `${originOf(c.req.url, { get: (n) => c.req.header(n) })}/mcp`; // the public origin, not the task's
   const row = (k: string, v: string, ok = true) => `<tr><th>${e(k)}</th><td class="${ok ? "ok" : "bad"}">${e(v)}</td></tr>`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Powerline ${e(VERSION)}</title>
@@ -231,7 +233,8 @@ app.post("/oauth/token", async (c) => {
 
 app.get("/healthz", async (c) => {
   const store = await storeHealth();
-  return c.json({ ok: store.ok, sessions: sessions.size, telemetry: source.name, store, llm: llmEnabled, version: VERSION, auth: auth.required ? "token-or-oauth" : "open", oauth: auth.required ? oauth.stats : null }, store.ok ? 200 : 503);
+  const publicStore = { ...store, detail: store.detail.replace(/\/[^\s(]+store\.json/, "store.json") }; // no filesystem paths on a public endpoint
+  return c.json({ ok: store.ok, sessions: sessions.size, telemetry: source.name, store: publicStore, llm: llmEnabled, version: VERSION, auth: auth.required ? "token-or-oauth" : "open", oauth: auth.required ? oauth.stats : null }, store.ok ? 200 : 503);
 });
 
 /**
@@ -331,7 +334,14 @@ app.all("/mcp", async (c) => {
     transport = await newSession(principal.householdId); // initialize request; transport validates it is one
   }
 
-  return withCors(await transport.handleRequest(req), origin);
+  // The Content-Length check above is advisory; a chunked body has none. Read with a hard ceiling.
+  let bounded = req;
+  if (req.method === "POST") {
+    const text = await boundedText(req, MAX_BODY_BYTES);
+    if (text === null) return withCors(c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Request body too large" } }, 413), origin);
+    bounded = new Request(req.url, { method: req.method, headers: req.headers, body: text });
+  }
+  return withCors(await transport.handleRequest(bounded), origin);
 });
 
 // A rejected promise anywhere must not take the server down mid-demo.
@@ -340,6 +350,24 @@ process.on("uncaughtException", (err) => console.error("[powerline] uncaught exc
 
 void checkCardsBuilt();
 void storeHealth().then((h) => console.log(`Store: ${h.backend} — ${h.ok ? h.detail : `UNAVAILABLE: ${h.detail}`}`));
+
+// History accumulates whether or not anyone is connected (one reading an hour per household).
+// With simulated telemetry, SEED_HISTORY_DAYS=7 gives a household that has no readings yet a
+// week of plausible history ending where the simulated clock starts, so reports and learning
+// are demonstrable from the first minute of a fresh deployment.
+const envNum = (name: string, dflt: number) => { const n = Number(process.env[name]); return process.env[name]?.trim() && Number.isFinite(n) && n > 0 ? n : dflt; };
+const seedDays = Math.min(60, envNum("SEED_HISTORY_DAYS", 0));
+const seeded: Promise<unknown> = source.name === "simulated" && seedDays > 0
+  ? Promise.all(auth.householdIds.map((id) => {
+      const end = process.env.SIM_CLOCK_START && !Number.isNaN(Date.parse(process.env.SIM_CLOCK_START)) ? process.env.SIM_CLOCK_START : new Date().toISOString();
+      return seedHousehold(id, seedDays, end, { arrayKw: envNum("SIM_ARRAY_KW", 4.5), batteryKwh: envNum("SIM_BATTERY_KWH", 10), onlyIfEmpty: true })
+        .then((n) => n && console.log(`[history] seeded ${n} hourly readings for "${id}"`))
+        .catch((e) => console.error(`[history] seed failed for "${id}": ${(e as Error).message}`));
+    }))
+  : Promise.resolve();
+// The recorder starts once seeding has settled, so its first sample can never pre-empt the seed's "no readings yet" check.
+let recorder = { stop: () => {} };
+void seeded.then(() => { recorder = startHistoryRecorder(source, () => auth.householdIds, envNum("HISTORY_INTERVAL_MS", 30_000)); });
 const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
   console.log(`Powerline MCP endpoint: http://${HOST}:${PORT}/mcp  (telemetry: ${source.name}, store: ${getStore().name}, auth: ${auth.describe()})`);
 });
@@ -351,7 +379,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     if (shuttingDown) process.exit(130);
     shuttingDown = true;
     console.log(`\n[powerline] ${signal} — closing ${sessions.size} session(s)…`);
-    clearInterval(reaper);
+    clearInterval(reaper); recorder.stop();
     for (const id of [...sessions.keys()]) closeSession(id, "shutdown");
     server.close(() => process.exit(0));
     // close() waits for keep-alive and SSE connections to end on their own; a host that keeps

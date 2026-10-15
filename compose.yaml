@@ -12,6 +12,7 @@ services:
       SIM_SPEED: "60"
       ALERT_INTERVAL_MS: "10000"
       TZ_OFFSET: "1"
+      SEED_HISTORY_DAYS: "7"
       # Uncomment to require a token (household:secret). MCPJam: add header Authorization: Bearer <secret>
       # API_TOKENS: "home:change-me-to-something-long"
       # Live data instead of the simulator:

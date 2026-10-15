@@ -25,9 +25,13 @@ export function registerReportTools(server: McpServer, ctx: SessionContext): voi
     const days = dailyReports(rows, tz, profile.reserveSocPct);
     const sum = summarize(days, h.tariff);
     const label = period === "week" ? "the last 7 days" : period;
+    // The local calendar days the period covers, so the card can draw an empty slot for a day with no readings.
+    const nowMsSafe = Number.isNaN(Date.parse(t.at)) ? Date.now() : Date.parse(t.at);
+    const dayMs = 86_400_000, todayMs = Math.floor((nowMsSafe + tz * 3_600_000) / dayMs) * dayMs;
+    const dates = period === "week" ? Array.from({ length: 7 }, (_, i) => new Date(todayMs - (6 - i) * dayMs).toISOString().slice(0, 10)) : [new Date(todayMs - (period === "yesterday" ? dayMs : 0)).toISOString().slice(0, 10)];
     if (rows.length === 0) {
-      const text = `No readings for ${label} yet. Powerline records one reading an hour while a session is open; reports and learning start from the first full day.`;
-      return { content: [{ type: "text", text }], structuredContent: { period, days: [], summary: sum, learned, reserve: profile.reserveSocPct, tariff: h.tariff ?? null, empty: true } };
+      const text = `No readings for ${label} yet. Powerline records one reading an hour, whether or not anyone is connected; reports and learning start from the first full day.`;
+      return { content: [{ type: "text", text }], structuredContent: { period, dates, days: [], summary: sum, learned, reserve: profile.reserveSocPct, tariff: h.tariff ?? null, empty: true } };
     }
     const lines = [
       `${label[0].toUpperCase()}${label.slice(1)} (${rows.length} h of readings): solar ${fmtKwh(sum.solarKwh)}, house ${fmtKwh(sum.loadKwh)}, ${sum.solarSharePct}% covered without the grid.`,
@@ -35,7 +39,8 @@ export function registerReportTools(server: McpServer, ctx: SessionContext): voi
       `Lowest battery ${sum.minSocPct}%${sum.hoursBelowReserve ? `, ${sum.hoursBelowReserve} h at or below the ${profile.reserveSocPct}% reserve` : `, never below the ${profile.reserveSocPct}% reserve`}.`,
       learned.loadProfile ? `Forecast now uses this household's own load shape (${learned.days} days of data)${learned.pvFactor !== null ? ` and the array's real yield (${Math.round(learned.pvFactor * 100)}% of clear-sky)` : ""}.` : `Forecast still uses the generic load shape; it switches to this household's own after 3 full days (${learned.days} so far).`,
     ];
-    return { content: [{ type: "text", text: lines.join(" ") }], structuredContent: { period, days, summary: sum, learned, reserve: profile.reserveSocPct, tariff: h.tariff ?? null, empty: false } };
+    if (period === "week" && days.length < 7) lines.push(`Readings cover ${days.length} of the 7 days.`);
+    return { content: [{ type: "text", text: lines.join(" ") }], structuredContent: { period, dates, days, summary: sum, learned, reserve: profile.reserveSocPct, tariff: h.tariff ?? null, empty: false } };
   });
 
   server.registerTool("outage_outlook", {
@@ -58,7 +63,7 @@ export function registerReportTools(server: McpServer, ctx: SessionContext): voi
       : hours >= 48 ? `If the grid went off now, the battery would hold above the ${profile.reserveSocPct}% reserve for more than two days at this pattern.`
       : `If the grid went off now, the battery would reach the ${profile.reserveSocPct}% reserve in about ${hours < 1 ? "an hour" : `${Math.round(hours)} hours`}${until ? ` — around ${until}` : ""}.`;
     const pattern = ranges.length ? `From this household's history the grid is usually off ${ranges.join(", ")}.` : h.gridEvents.length < 4 ? "Not enough grid history yet to say when it is usually off; log a few on/off events or leave a session open." : "No usual off-hours stand out in the next 24 h.";
-    return { content: [{ type: "text", text: `${autonomy} ${pattern}` }], structuredContent: { autonomyHours: hours, reserveReachedAt: until, usualOffHours: offHours, gridOn: t.grid_available } };
+    return { content: [{ type: "text", text: `${autonomy} ${pattern}` }], structuredContent: { autonomyHours: hours, reserveReachedAt: until, usualOffHoursFromNow: offHours, usualOffLocalHours: offHours.map((i) => (localHour + i) % 24), gridOn: t.grid_available } };
   });
 
   server.registerTool("set_tariff", {

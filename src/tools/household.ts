@@ -79,6 +79,7 @@ export function registerHouseholdTools(server: McpServer, ctx: SessionContext): 
   server.registerTool("log_grid_event", {
     title: "Log grid on/off",
     description: "Record that grid power just came on or went off. Powerline learns the supply pattern from these.",
+    annotations: { idempotentHint: true },
     inputSchema: z.object({ on: z.boolean(), at: z.string().datetime({ offset: true }).optional().describe("When it happened (ISO 8601); defaults to now") }),
   }, async ({ on, at }) => {
     // "Now" is telemetry time, so it lines up with the alert monitor's own grid observations

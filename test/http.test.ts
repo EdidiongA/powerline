@@ -100,6 +100,9 @@ test("oversized bodies are refused and the session ceiling returns 503 with Retr
       rq.on("error", rej); rq.write(initBody); // never finishes the body; the server must answer from the header alone
     });
     assert.equal(status, 413);
+    // A chunked body carries no Content-Length; the ceiling must still hold (counted bytes, not the header).
+    const chunked = await fetch(`${s.url}/mcp`, { method: "POST", headers: jsonHeaders, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "x".repeat(1_100_000), version: "0" } } }) });
+    assert.equal(chunked.status, 413, "chunked bodies are bounded too");
     const first = await fetch(`${s.url}/mcp`, { method: "POST", headers: jsonHeaders, body: initBody });
     assert.equal(first.status, 200); await first.text();
     const second = await fetch(`${s.url}/mcp`, { method: "POST", headers: jsonHeaders, body: initBody });

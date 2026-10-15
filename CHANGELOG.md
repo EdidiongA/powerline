@@ -2,6 +2,13 @@
 
 All work below happened inside the hackathon submission window (31 Aug – 23 Oct 2026). The repository was created on 9 September 2026; nothing pre-dates it.
 
+## 0.13.4 — 15 Oct 2026
+- Third fresh-eyes sweep (three reviewers: a judge reading the repo, a code reviewer, and a black-box probe of the live deployment), all fixed: **reminders are delivered to every open session** — `firedAt` was being used as a delivery receipt, so with two hosts open only one heard the 08:00 push (e2e test added with two sessions); the 1 MB `/mcp` body ceiling now counts bytes, so a chunked body cannot bypass it; the landing page advertises the public origin behind the load balancer; `/healthz` no longer prints a filesystem path; the rules router caps utterance length (a 60k-character request used to stall the event loop for ten seconds) and routes "note NEPA took light", "cancel everything", "could you run the energy report" and "switch off the fridge" correctly; `repairHistory` can no longer leave two assistant turns adjacent; the host trims before it marks a turn for rollback; the simulated inverter sheds load at the cut-off instead of drawing power from nowhere; seeding settles before the recorder starts; the deploy script re-attaches IAM policies on every run and the image workflow also fires on `master`; `outage_outlook` names its hour fields unambiguously; `log_grid_event` carries its annotation. Docs brought in line (three cards, ECS Express, 26 friction entries, recorder). 119 tests.
+
+## 0.13.3 — 15 Oct 2026
+- Bedrock: a throttled call is retried once after a short pause instead of surfacing as a 503 (seen when probing the live demo with nineteen prompts in a burst); the model is told to log a reported grid flip before giving the outlook, and that "switch off X" is not something it can do.
+- **History no longer depends on an open session.** Found on the live demo: "last 7 days" showed two days because readings were only taken while someone had the host open. A server-level recorder (`src/recorder.ts`) now samples every household once an hour and logs grid flips whether or not anyone is connected; the session monitors keep doing the same, idempotently. With simulated telemetry, `SEED_HISTORY_DAYS=7` gives a household with no readings a week of plausible history ending where the simulated clock starts (`src/seed.ts`; the deploy script sets it), so a fresh deployment reports and learns from minute one. The simulated inverter now has a low-battery cut-off (`SIM_CUTOFF_SOC`, default 10 %) instead of flattening the battery to 0 %. The report card draws all seven day slots, dimming days without readings and saying "readings on N of 7". 115 tests.
+
 ## 0.13.2 — 12 Oct 2026
 - **Free-form requests in the simulated host.** Found on the live demo: without Bedrock, "give me a brief of what it looks like by tomorrow morning" and "do all of them" both got the same menu. The no-model router now understands briefings and "will it last" phrasings, lets planning win over time words, knows more status synonyms, and turns "do all of them / give me everything / full rundown" into four read-only tools in one turn (never arming anything); an unknown request gets concrete example phrasings instead of a vague menu. The Bedrock system prompt gets the same mapping and is told never to answer with only a menu. Router tests cover both original sentences verbatim; the headless-browser check asks them on every push. 112 tests.
 
@@ -61,7 +68,7 @@ All work below happened inside the hackathon submission window (31 Aug – 23 Oc
 ## 0.9.0 — 2 Oct 2026
 - MCP **prompts** (`prompts/list`): `evening_outlook`, `plan_my_day`, `can_i_run`, `set_up_household`.
 - **Agent Skill** `skills/powerline-home-power/SKILL.md` (agentskills.io format): how an agent should drive the tools, relay reminders and phrase answers.
-- GitHub Actions CI: build + 109 tests on Ubuntu and Windows, Docker image build with a `/healthz` probe.
+- GitHub Actions CI: build + 81 tests on Ubuntu and Windows, Docker image build with a `/healthz` probe.
 - README: card screenshots, architecture diagram, deployment guide for a public Alexa+-reachable endpoint (`docs/DEPLOY.md`).
 
 ## 0.8.0 — 30 Sep 2026

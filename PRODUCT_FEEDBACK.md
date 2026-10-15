@@ -1,6 +1,6 @@
 # Product feedback
 
-Written in first person from building Powerline between 8 September and 5 October 2026. One section
+Written in first person from building Powerline between 8 September and 15 October 2026. One section
 per tool, API or SDK, each answering the five questions the submission asks: what I used it for, what
 worked well, what needs work, how onboarding felt, and whether I would build with it again.
 Severity and dates for every "needs work" item are in [`FRICTION_LOG.md`](FRICTION_LOG.md).
@@ -55,11 +55,11 @@ would be twenty minutes.
 
 **Build with it again?** **Yes.** Once past the two silent failures the SDK did what it said; the
 session model is small and the transport never crashed in four weeks of demos. I opened a docs PR for the two
-drops because every server author will hit them. **[verify: PR URL]**
+drops because every server author will hit them; the PR link is in the Open Source section of the submission.
 
 ## 2. MCP Apps — `@modelcontextprotocol/ext-apps` v2
 
-**Used for:** the dashboard and planner cards: `registerAppTool` / `registerAppResource` on the server,
+**Used for:** the dashboard, planner and report cards: `registerAppTool` / `registerAppResource` on the server,
 the in-view `App` client (`ontoolresult`, `callServerTool`, `getHostContext`, `onhostcontextchanged`) in
 the cards.
 
@@ -225,7 +225,33 @@ payload, would make the distinction impossible to miss.
 **Build with it again?** **Yes.** It is the right amount of API for the job; the fallback to clear-sky
 means it can never take Powerline down.
 
-## 9. Hackathon resources and the Alexa+ track documentation
+## 9. Amazon ECS Express Mode (the live demo's host)
+
+**Used for:** running the public instance judges can open — one Fargate task behind a managed load
+balancer with an `https://…ecs.us-east-1.on.aws` URL, created by `scripts/deploy-ecs-express.sh` from
+AWS CloudShell, pulling the image that GitHub Actions publishes to `ghcr.io`.
+
+**What worked well.** One API call (`create-express-gateway-service`) replaces a VPC, load balancer,
+target group, certificate and service definition; the URL is HTTPS out of the box; `x-forwarded-proto`
+arrives so OAuth metadata advertises the right origin; the long-lived SSE stream survived 10 minutes
+behind the balancer with the SDK's 15-second keep-alives. Rolling updates swap tasks without a gap.
+
+**What needs work.** (1) The getting-started page's example passes `--cpu 2 --memory 4` while the API
+wants CPU units and MiB (`1024`/`2048`) — the first attempt fails with "Invalid CPU/Memory combination".
+(2) `--monitor-resources` assumes a TTY and prints an error in CloudShell unless `--monitor-mode
+TEXT-ONLY` is added. (3) The service reports ACTIVE minutes before its DNS name resolves, so a script
+has to poll the URL, not the status. (4) Response headers on an SSE `GET` are held until the first body
+byte reaches the balancer (~15 s here) — a host with a short connect timeout would misread that as
+"down". (5) There is no "from a public GitHub image" example, which is the shape most hackathon
+projects have.
+
+**Onboarding:** an evening, most of it discovering that App Runner had closed and that the Express
+Mode docs' units example was wrong; after that, redeploys are one line.
+
+**Build with it again?** **Yes.** It is the right size for a single-container service, and the
+friction above is all documentation.
+
+## 10. Hackathon resources and the Alexa+ track documentation
 
 **Used for:** deciding what to build and which protocol version to target.
 
@@ -254,4 +280,5 @@ facts, with a deadline and a plain-facts fallback; **Amazon DynamoDB** (`src/sto
 per-household state with conditional writes, strongly consistent reads, jittered retries and bounded
 records. Both are exercised at runtime (`npm run start:aws` with `STORE=dynamodb` and
 `BEDROCK_MODEL_ID` set) and the integration is documented in the README's *Store* and *Environment*
-sections. Deployment to Amazon ECS Express Mode is described in `docs/DEPLOY.md` (App Runner, the first plan, closed to new customers in April 2026 — see the friction log).
+sections. The judges' live instance runs on **Amazon ECS Express Mode** (section 9) with a task role for
+Bedrock; App Runner, the first plan, closed to new customers in April 2026 — see the friction log.

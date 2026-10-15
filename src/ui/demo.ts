@@ -125,9 +125,9 @@ async function turn(userText: string) {
   if (busy) return;
   if (!client && !(await reconnect())) { you(userText); alexa("Not connected to Powerline yet — check the server and reload."); return; }
   you(userText);
+  trimHistory(); // trim first so `mark` points at a real position after the shift
   const mark = history.length; // on any failure the turn is rolled back, so roles keep alternating for Bedrock
-  history.push({ role: "user", content: [{ text: userText }] });
-  trimHistory();
+  history.push({ role: "user", content: [{ text: userText.slice(0, 2_000) }] });
   setBusy(true);
   const used: string[] = [];
   try {
@@ -140,7 +140,7 @@ async function turn(userText: string) {
       if (assistant.content.length) history.push(assistant);
       if (reply.toolCalls.length === 0) {
         if (reply.text) alexa(reply.text, used.length ? `via ${used.map((u) => `<code>${esc(u)}</code>`).join(", ")}` : undefined);
-        else { history.length = mark; alexa("I didn't get a reply that time — ask again?"); }
+        else { history.length = Math.min(mark, history.length); alexa("I didn't get a reply that time — ask again?"); }
         break;
       }
       // A model may think aloud before calling a tool ("Let me check the battery…"); show it.

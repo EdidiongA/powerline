@@ -15,7 +15,7 @@
 #
 #   bash scripts/deploy-ecs-express.sh delete      # tears the service down again
 set -euo pipefail
-REGION=${AWS_REGION:-us-east-1}
+export REGION=${AWS_REGION:-us-east-1}
 SERVICE=${SERVICE:-powerline}
 IMAGE=${IMAGE:-ghcr.io/edidionga/powerline:latest}
 API_TOKEN_SECRET=${API_TOKEN_SECRET:-}
@@ -39,9 +39,9 @@ role_arn() {
   local name=$1 principal=$2 policy=$3
   if ! aws iam get-role --role-name "$name" >/dev/null 2>&1; then
     aws iam create-role --role-name "$name" --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"$principal\"},\"Action\":\"sts:AssumeRole\"}]}" >/dev/null
-    aws iam attach-role-policy --role-name "$name" --policy-arn "$policy"
     echo "created IAM role $name" >&2; sleep 12   # IAM is eventually consistent
   fi
+  aws iam attach-role-policy --role-name "$name" --policy-arn "$policy"   # idempotent: repairs a role whose first attach failed
   aws iam get-role --role-name "$name" --query Role.Arn --output text
 }
 exec_role=$(role_arn ecsTaskExecutionRole ecs-tasks.amazonaws.com arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy)
@@ -56,7 +56,7 @@ fi
 container=$(python3 - "$IMAGE" <<'PY'
 import json, os, sys
 e = {"HOST": "0.0.0.0", "NODE_ENV": "production", "DATA_DIR": "/tmp/powerline-data",
-     "SIM_START_SOC": "55", "SIM_CLOCK_START": "2026-10-01T20:00:00Z", "TZ_OFFSET": "1"}
+     "SIM_START_SOC": "55", "SIM_CLOCK_START": "2026-10-01T20:00:00Z", "TZ_OFFSET": "1", "SEED_HISTORY_DAYS": "7"}
 if os.environ.get("API_TOKEN_SECRET"): e["API_TOKENS"] = "judge:" + os.environ["API_TOKEN_SECRET"]
 if os.environ.get("REGION"): e["AWS_REGION"] = os.environ["REGION"]
 for k in ["STORE", "DYNAMO_TABLE", "BEDROCK_MODEL_ID", "ALLOWED_ORIGINS", "POWER_SOURCE", "VRM_DEMO", "VRM_SITE_ID", "WEATHER_LAT", "WEATHER_LON", "PUBLIC_URL"]:

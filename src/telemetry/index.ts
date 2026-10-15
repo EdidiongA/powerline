@@ -47,6 +47,7 @@ function buildSource(env: NodeJS.ProcessEnv): TelemetrySource {
         speed: num(env.SIM_SPEED, 60), // 1 real second = 1 simulated minute
         startSoc: env.SIM_START_SOC ? Math.min(100, Math.max(0, num(env.SIM_START_SOC, 65))) : undefined,
         clockStart: env.SIM_CLOCK_START ? new Date(env.SIM_CLOCK_START) : undefined, // e.g. 2026-09-09T21:00:00Z; invalid → now
+        cutoffSocPct: env.SIM_CUTOFF_SOC ? num(env.SIM_CUTOFF_SOC, 10) : undefined,
       });
   }
 }
