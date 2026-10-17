@@ -24,7 +24,9 @@ import { seedHousehold } from "./seed.js";
 
 const source = sourceFromEnv(); // shared across sessions so the simulator clock is continuous
 
-const PORT = Number(process.env.PORT ?? 3000);
+/** Positive finite number from the environment, else the default: a blank or garbage value must never disable a limit. */
+const envNum = (name: string, dflt: number) => { const n = Number(process.env[name]); return process.env[name]?.trim() && Number.isFinite(n) && n > 0 ? n : dflt; };
+const PORT = envNum("PORT", 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
 /** Bearer tokens identify the household (see auth.ts). No tokens configured = open, demo household. */
 const auth = new Authenticator();
@@ -56,10 +58,25 @@ async function boundedText(req: Request, max: number): Promise<string | null> {
 }
 /** Fixed-window counter for unauthenticated endpoints that must not be hammered. */
 const counters = new Map<string, number[]>();
+/**
+ * Two gates: a per-caller limit so one noisy client cannot exhaust an endpoint for everyone behind the same
+ * deployment, and a global ceiling (ten times the per-caller one) so a forged X-Forwarded-For — the first entry
+ * is whatever the client wrote; a load balancer only appends — cannot turn the per-caller key into no limit at all.
+ */
+function throttled(endpoint: string, h: { get: (n: string) => string | undefined }, perCaller: number): boolean {
+  const fwd = h.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = (fwd && fwd.length <= 64 ? fwd : null) ?? "local";
+  const mine = overLimit(`${endpoint}:${ip}`, perCaller);
+  const all = overLimit(endpoint, perCaller * 10);
+  return mine || all;
+}
 function overLimit(key: string, max: number, windowMs = 60_000): boolean {
   const now = Date.now(); const hits = (counters.get(key) ?? []).filter((t) => now - t < windowMs);
   hits.push(now); counters.set(key, hits);
-  if (counters.size > 10_000) counters.clear(); // never let the table itself become the problem
+  if (counters.size > 10_000) { // never let the table itself become the problem — but drop the stale keys, not everyone's window
+    for (const [k, v] of counters) if (!v.some((t) => now - t < windowMs)) counters.delete(k);
+    if (counters.size > 10_000) counters.clear();
+  }
   return hits.length > max;
 }
 
@@ -83,10 +100,10 @@ const sessions = new Map<string, Session>();
  * said nothing since must still get its 15:00 reminder, and thanks to CachedSource an
  * idle session costs one timer and a little memory, not upstream API calls.
  */
-const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS ?? 6 * 3_600_000);
+const SESSION_TTL_MS = envNum("SESSION_TTL_MS", 6 * 3_600_000);
 const REAP_EVERY_MS = 60_000;
 /** Ceiling on open sessions and on a request body: an open (token-less) endpoint must not be a memory sink. */
-const MAX_SESSIONS = Number(process.env.MAX_SESSIONS ?? 500);
+const MAX_SESSIONS = envNum("MAX_SESSIONS", 500);
 const MAX_BODY_BYTES = 1_000_000;
 
 function closeSession(id: string, reason: string): void {
@@ -117,11 +134,12 @@ function originAllowed(origin: string | undefined, self?: string): boolean {
 }
 
 async function newSession(householdId: string): Promise<WebStandardStreamableHTTPServerTransport> {
-  const server = createServer({ userId: householdId, source });
+  const delivered = new Set<string>(); // reminders this session has announced — arm_plan and the monitor share it
+  const server = createServer({ userId: householdId, source, delivered });
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (id) => {
-      sessions.set(id, { transport, monitor: startAlertMonitor(server, source, householdId), lastSeen: Date.now(), householdId });
+      sessions.set(id, { transport, monitor: startAlertMonitor(server, source, householdId, undefined, undefined, delivered), lastSeen: Date.now(), householdId });
       console.log(`[session] opened ${id} for household "${householdId}"; ${sessions.size} open`);
     },
     onsessionclosed: (id) => closeSession(id, "client"),
@@ -185,7 +203,7 @@ app.options("/.well-known/*", (c) => withCors(new Response(null, { status: 204 }
 app.post("/oauth/register", async (c) => {
   if (!auth.required) return oauthOff(c);
   const origin = c.req.header("origin") ?? null;
-  if (overLimit("register", 60)) return withCors(c.json({ error: "temporarily_unavailable", error_description: "Too many registrations; try again in a minute" }, 429, { "Retry-After": "60" }), origin);
+  if (throttled("register", { get: (n) => c.req.header(n) }, 60)) return withCors(c.json({ error: "temporarily_unavailable", error_description: "Too many registrations; try again in a minute" }, 429, { "Retry-After": "60" }), origin);
   const raw = await boundedText(c.req.raw, 16_000);
   if (raw === null) return withCors(c.json({ error: "invalid_client_metadata", error_description: "Request body too large" }, 413), origin);
   let body: unknown; try { body = JSON.parse(raw); } catch { body = {}; }
@@ -203,7 +221,7 @@ app.get("/oauth/authorize", (c) => {
 const CONSENT_HEADERS = { "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'; default-src 'none'; style-src 'unsafe-inline'; form-action 'self'", "Referrer-Policy": "no-referrer" };
 app.post("/oauth/authorize", async (c) => {
   if (!auth.required) return oauthOff(c);
-  if (overLimit("consent", 120)) return c.html("<!doctype html><meta charset=\"utf-8\"><body style=\"font-family:system-ui;padding:24px\"><h2>Slow down</h2><p>Too many link attempts; try again in a minute.</p></body>", 429, { "Retry-After": "60" });
+  if (throttled("consent", { get: (n) => c.req.header(n) }, 120)) return c.html("<!doctype html><meta charset=\"utf-8\"><body style=\"font-family:system-ui;padding:24px\"><h2>Slow down</h2><p>Too many link attempts; try again in a minute.</p></body>", 429, { "Retry-After": "60" });
   const raw = await boundedText(c.req.raw, 16_000);
   let f: Record<string, unknown> = {};
   if (raw !== null && (c.req.header("content-type") ?? "").includes("application/x-www-form-urlencoded")) f = Object.fromEntries(new URLSearchParams(raw));
@@ -243,19 +261,19 @@ app.get("/healthz", async (c) => {
  * through /mcp and /demo/llm, which carry the same auth as the MCP endpoint.
  */
 app.get("/demo", async (c) => c.html(await cardHtml("demo.html")));
+app.get("/favicon.ico", (c) => c.body('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#16202a"/><path d="M18 4 8 18h7l-1 10 10-14h-7z" fill="#1e9e5a"/></svg>', 200, { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" }));
 
-const LLM_RATE = { windowMs: 60_000, max: Number(process.env.DEMO_LLM_PER_MINUTE ?? 60) };
-let llmCalls: number[] = [];
+const LLM_PER_MINUTE = envNum("DEMO_LLM_PER_MINUTE", 60);
 app.post("/demo/llm", async (c) => {
   const origin = c.req.header("origin") ?? null;
   if (!originAllowed(origin ?? undefined, originOf(c.req.url, { get: (n) => c.req.header(n) }))) return c.json({ error: "Forbidden origin" }, 403);
   if (!auth.authenticate(c.req.header("authorization"))) return withCors(c.json({ error: "Unauthorized" }, 401, { "WWW-Authenticate": challenge(originOf(c.req.url, { get: (n) => c.req.header(n) }), c.req.header("authorization")) }), origin);
-  if (Number(c.req.header("content-length") ?? 0) > 200_000) return withCors(c.json({ error: "Request body too large" }, 413), origin);
-  const now = Date.now(); llmCalls = llmCalls.filter((t) => now - t < LLM_RATE.windowMs);
-  if (llmCalls.length >= LLM_RATE.max) return withCors(c.json({ error: "Too many requests; try again in a minute" }, 429, { "Retry-After": "60" }), origin);
-  llmCalls.push(now);
+  if (throttled("llm", { get: (n) => c.req.header(n) }, LLM_PER_MINUTE)) return withCors(c.json({ error: "Too many requests; try again in a minute" }, 429, { "Retry-After": "60" }), origin);
+  // Byte-counted like /mcp: a chunked body has no Content-Length to check.
+  const raw = await boundedText(c.req.raw, 200_000);
+  if (raw === null) return withCors(c.json({ error: "Request body too large" }, 413), origin);
   let body: { messages?: unknown; tools?: unknown };
-  try { body = await c.req.json(); } catch { return withCors(c.json({ error: "Body must be JSON" }, 400), origin); }
+  try { body = JSON.parse(raw); if (!body || typeof body !== "object") throw new Error(); } catch { return withCors(c.json({ error: "Body must be JSON" }, 400), origin); }
   const messages = checkMessages(body.messages);
   if (typeof messages === "string") return withCors(c.json({ error: messages }, 400), origin);
   const tools = (Array.isArray(body.tools) ? body.tools : []).filter((t): t is ToolSpec => !!t && typeof (t as ToolSpec).name === "string").slice(0, 40);
@@ -355,7 +373,6 @@ void storeHealth().then((h) => console.log(`Store: ${h.backend} — ${h.ok ? h.d
 // With simulated telemetry, SEED_HISTORY_DAYS=7 gives a household that has no readings yet a
 // week of plausible history ending where the simulated clock starts, so reports and learning
 // are demonstrable from the first minute of a fresh deployment.
-const envNum = (name: string, dflt: number) => { const n = Number(process.env[name]); return process.env[name]?.trim() && Number.isFinite(n) && n > 0 ? n : dflt; };
 const seedDays = Math.min(60, envNum("SEED_HISTORY_DAYS", 0));
 const seeded: Promise<unknown> = source.name === "simulated" && seedDays > 0
   ? Promise.all(auth.householdIds.map((id) => {

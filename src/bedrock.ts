@@ -13,7 +13,7 @@
 import type { BedrockRuntimeClient as BedrockClient } from "@aws-sdk/client-bedrock-runtime";
 
 const MODEL_ID = process.env.BEDROCK_MODEL_ID;
-const TIMEOUT_MS = Number(process.env.BEDROCK_TIMEOUT_MS ?? 15_000);
+const TIMEOUT_MS = (() => { const n = Number(process.env.BEDROCK_TIMEOUT_MS); return process.env.BEDROCK_TIMEOUT_MS?.trim() && Number.isFinite(n) && n > 0 ? n : 15_000; })();
 
 export const bedrockEnabled = Boolean(MODEL_ID);
 
@@ -40,6 +40,6 @@ export async function summarize(text: string): Promise<string> {
     }),
     { abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
   );
-  const block = res.output?.message?.content?.[0];
+  const block = res.output?.message?.content?.find((b) => typeof (b as { text?: unknown }).text === "string") ?? res.output?.message?.content?.[0]; // the first TEXT block; a reasoning block may come first
   return block && "text" in block && block.text ? block.text : "";
 }

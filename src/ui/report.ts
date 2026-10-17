@@ -25,7 +25,7 @@ function render(raw: Report) {
   const s: Summary = { solarKwh: fin(raw.summary?.solarKwh), loadKwh: fin(raw.summary?.loadKwh), gridKwh: fin(raw.summary?.gridKwh), gridHours: fin(raw.summary?.gridHours), minSocPct: fin(raw.summary?.minSocPct, 100), hoursBelowReserve: fin(raw.summary?.hoursBelowReserve), solarSharePct: fin(raw.summary?.solarSharePct),
     gridCost: typeof raw.summary?.gridCost === "number" && Number.isFinite(raw.summary.gridCost) ? raw.summary.gridCost : null, solarValue: typeof raw.summary?.solarValue === "number" && Number.isFinite(raw.summary.solarValue) ? raw.summary.solarValue : null, currency: typeof raw.summary?.currency === "string" ? raw.summary.currency : null };
   const reserve = fin(raw.reserve, 20);
-  const tabs = (["today", "yesterday", "week"] as const).map((p) => `<button data-period="${p}" aria-pressed="${p === period}">${TAB[p]}</button>`).join("");
+  const tabs = (["today", "yesterday", "week"] as const).map((p) => `<button data-period="${p}" role="tab" aria-selected="${p === period}">${TAB[p]}</button>`).join("");
   const max = Math.max(0.1, ...days.map((d) => Math.max(d.solarKwh, d.loadKwh)));
   // Every calendar day of the period gets a slot; a day with no readings is drawn empty and dimmed, so "7 days" always shows seven.
   const slots: string[] = Array.isArray(raw.dates) && raw.dates.every((x) => typeof x === "string") && raw.dates.length ? raw.dates : days.map((d) => d.date);
@@ -66,8 +66,8 @@ async function load(period: Report["period"]) {
     const res = await app.callServerTool({ name: "energy_report", arguments: { period } });
     if (res.isError) throw new Error(textOf(res));
     const sc = res.structuredContent as Report | undefined;
-    if (sc) render(sc);
-    status.textContent = "";
+    if (sc) { render(sc); status.textContent = ""; }
+    else status.textContent = "No report came back — try again.";
   } catch (e) { status.textContent = `Could not load: ${(e as Error).message}`; console.error(e); }
   finally { busy = false; root.classList.remove("busy"); root.querySelectorAll("button").forEach((b) => { (b as HTMLButtonElement).disabled = false; }); }
 }

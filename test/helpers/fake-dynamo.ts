@@ -47,7 +47,9 @@ export class FakeDynamo {
       const stored = this.items.get(input.Item.pk);
       const expected = input.ExpressionAttributeValues?.[":expected"];
       const firstWriteAllowed = /attribute_not_exists\(pk\)/.test(input.ConditionExpression);
-      const ok = stored ? stored.version === expected : firstWriteAllowed;
+      const unversionedAllowed = /attribute_not_exists\(#v\)/.test(input.ConditionExpression);
+      // DynamoDB semantics: a missing attribute never equals a value, so `#v = :expected` is false for an unversioned item.
+      const ok = stored ? (stored.version === undefined ? unversionedAllowed : stored.version === expected) : firstWriteAllowed;
       if (!ok) throw new ConditionalCheckFailed();
     }
     this.items.set(input.Item.pk, structuredClone(input.Item));

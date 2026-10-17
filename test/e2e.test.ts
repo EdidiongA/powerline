@@ -27,7 +27,8 @@ async function connect(url: string, token?: string) {
 
 test("the five-minute evaluation path works over real Streamable HTTP, end to end", async () => {
   // Night, 55 %: the iron is "not now"; solar slots are tomorrow morning. Clock runs 50 sim-min/s so the morning slot arrives in ~15 s.
-  const s = await boot({ SIM_START_SOC: "55", SIM_CLOCK_START: "2026-10-01T20:00:00Z", SIM_SPEED: "3000", ALERT_INTERVAL_MS: "1000" });
+  // 60 % at 21:00 Lagos on a fresh store: "Holds through the night", and the iron is "Not now" with a morning solar slot — the video's exact claims.
+  const s = await boot({ SIM_START_SOC: "60", SIM_CLOCK_START: "2026-10-01T20:00:00Z", SIM_SPEED: "3000", ALERT_INTERVAL_MS: "1000" });
   try {
     const a = await connect(s.url);
     assert.ok(a.transport.sessionId, "server issued a session id");
@@ -49,6 +50,7 @@ test("the five-minute evaluation path works over real Streamable HTTP, end to en
     // 3: status carries the card's payload and no longer flags the default profile.
     const st = await a.call("power_status");
     assert.equal(st.structuredContent!.profileIsDefault, false);
+    assert.equal(st.structuredContent!.hoursToFloor, null, `must hold through the night at 60 %: ${st.text}`);
     assert.equal((st.structuredContent!.forecast as unknown[]).length, 24);
 
     // 4: not now, with a morning slot.
@@ -130,6 +132,23 @@ test("every open session hears its own reminder: two hosts for one household bot
     assert.ok(a.notes.some((n) => n.kind === "reminder"), `session A got no reminder: ${JSON.stringify(a.notes)}`);
     assert.ok(b.notes.some((n) => n.kind === "reminder"), `session B got no reminder: ${JSON.stringify(b.notes)}`);
     assert.equal(a.notes.filter((n) => n.kind === "reminder").length, 1, "and each hears it exactly once");
+    await a.client.close(); await b.client.close();
+  } finally { await s.stop(); }
+});
+
+
+test("an item that can run right now is announced once by the arming session, and once by every other session", async () => {
+  // Midday, sun up, battery high: the iron can run now → arm_plan says so immediately; the monitors must not repeat it on that session.
+  const s = await boot({ SIM_START_SOC: "80", SIM_CLOCK_START: "2026-10-01T11:00:00Z", SIM_SPEED: "60", ALERT_INTERVAL_MS: "1000" });
+  try {
+    const a = await connect(s.url), b = await connect(s.url);
+    await a.call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 });
+    await a.call("add_appliance", { name: "iron", watts: 1800, minutes: 30 });
+    const armed = await a.call("arm_plan");
+    assert.match(armed.text, /can run right now/, armed.text);
+    await new Promise((r) => setTimeout(r, 4_000)); // several monitor ticks on both sessions
+    assert.equal(a.notes.filter((n) => n.kind === "reminder").length, 1, `arming session heard: ${JSON.stringify(a.notes)}`);
+    assert.equal(b.notes.filter((n) => n.kind === "reminder").length, 1, `other session heard: ${JSON.stringify(b.notes)}`);
     await a.client.close(); await b.client.close();
   } finally { await s.stop(); }
 });

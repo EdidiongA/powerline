@@ -21,9 +21,9 @@ export function registerHouseholdTools(server: McpServer, ctx: SessionContext): 
     title: "Set up the solar system",
     description: "Store the household's system profile: array size, battery, inverter, reserve floor.",
     inputSchema: z.object({
-      arrayKw: z.number().positive().max(1_000_000).describe("Total PV array size in kW (e.g. 9 panels × 500 W = 4.5). Values over 100 are read as watts."),
-      batteryKwh: z.number().positive().max(1_000_000).describe("Usable battery capacity in kWh. Values over 1000 are read as Wh."),
-      inverterKw: z.number().positive().max(1_000_000).describe("Inverter rating in kW. Values over 100 are read as watts."),
+      arrayKw: z.number().min(0.05).max(1_000_000).describe("Total PV array size in kW (e.g. 9 panels × 500 W = 4.5). Values over 100 are read as watts."),
+      batteryKwh: z.number().min(0.1).max(1_000_000).describe("Usable battery capacity in kWh. Values over 1000 are read as Wh."),
+      inverterKw: z.number().min(0.1).max(1_000_000).describe("Inverter rating in kW. Values over 100 are read as watts."),
       reserveSocPct: z.number().min(0).max(90).default(20).describe("Battery % the household wants to keep in reserve"),
       tzOffset: z.number().min(-12).max(14).optional().describe("Household UTC offset in hours (Lagos = 1, Nairobi = 3, London = 0 or 1). Omit to keep the current or server setting."),
     }),
@@ -32,7 +32,7 @@ export function registerHouseholdTools(server: McpServer, ctx: SessionContext): 
     // People say "4500" for a 4.5 kW array and "10000" for a 10 kWh battery. Treat anything
     // outside residential kW/kWh range as watts/Wh rather than storing a 4.5 MW roof.
     const notes: string[] = [];
-    const kw = (v: number, label: string) => { if (v > 100) { notes.push(`${label} ${v} read as watts → ${v / 1000} kW`); return v / 1000; } return v; };
+    const kw = (v: number, label: string) => { if (v >= 1000) { notes.push(`${label} ${v} read as watts → ${v / 1000} kW`); return v / 1000; } return v; }; // 4500 is watts; 101 is a (large) kW figure, not 0.101 kW
     const arrayKw = kw(p.arrayKw, "array");
     const inverterKw = kw(p.inverterKw, "inverter");
     const batteryKwh = p.batteryKwh > 1000 ? (notes.push(`battery ${p.batteryKwh} read as Wh → ${p.batteryKwh / 1000} kWh`), p.batteryKwh / 1000) : p.batteryKwh;
@@ -65,9 +65,9 @@ export function registerHouseholdTools(server: McpServer, ctx: SessionContext): 
     const replaced = (await getHousehold(ctx.userId)).appliances.some((x) => x.name.toLowerCase() === name.toLowerCase());
     await updateHousehold(ctx.userId, (h) => {
       h.appliances = h.appliances.filter((x) => x.name.toLowerCase() !== name.toLowerCase());
-      h.appliances.push({ name, watts: Math.round(a.watts), minutes: Math.round(a.minutes) });
+      h.appliances.push({ name, watts: Math.max(1, Math.round(a.watts)), minutes: Math.max(1, Math.round(a.minutes)) });
     });
-    return { content: [{ type: "text", text: `${replaced ? "Updated" : "Added"} ${name}: ${Math.round(a.watts)} W for ${Math.round(a.minutes)} min.${assumed}` }] };
+    return { content: [{ type: "text", text: `${replaced ? "Updated" : "Added"} ${name}: ${Math.max(1, Math.round(a.watts))} W for ${Math.max(1, Math.round(a.minutes))} min.${assumed}` }] };
   });
 
   server.registerTool("list_appliances", { title: "List appliances", description: "Appliances Powerline knows about.", inputSchema: z.object({}), annotations: { readOnlyHint: true } },
@@ -85,10 +85,17 @@ export function registerHouseholdTools(server: McpServer, ctx: SessionContext): 
     // "Now" is telemetry time, so it lines up with the alert monitor's own grid observations
     // (and with the simulator's clock in a demo). Only a change of state is recorded, so
     // saying "the grid went off" twice does not teach the pattern two outages.
-    const nowIso = at ?? (await ctx.source.current().then((t) => t.at).catch(() => new Date().toISOString()));
+    const telemetryNow = await ctx.source.current().then((t) => t.at).catch(() => new Date().toISOString());
+    const nowIso = at ?? telemetryNow;
+    // A time in the future, or more than 30 days back, would sit at the end of the log and block every later event.
+    const delta = Date.parse(nowIso) - Date.parse(telemetryNow);
+    if (!Number.isFinite(delta) || delta > 10 * 60_000 || delta < -30 * 86_400_000) {
+      return { content: [{ type: "text", text: `I can only log grid events from the last 30 days up to now (telemetry time ${telemetryNow}).` }], isError: true };
+    }
     let recorded = false; let since = "";
     await updateHousehold(ctx.userId, (h) => {
-      const previous = h.gridEvents[h.gridEvents.length - 1];
+      // Compare with the event immediately before this moment, not the chronologically last one.
+      const previous = [...h.gridEvents].filter((e) => Date.parse(e.at) <= Date.parse(nowIso)).pop();
       if (previous && previous.on === on) { since = localClock(previous.at, h.profile?.tzOffset); return; } // already in that state: a repeat is not a new event
       h.gridEvents.push({ at: nowIso, on });
       h.gridEvents.sort((x, y) => Date.parse(x.at) - Date.parse(y.at));

@@ -87,7 +87,7 @@ function render(raw: Plan) {
     <div class="foot">
       <div class="stat"><span>Battery now ${p.socNow ?? "–"}%</span>
         <span class="low" style="color:${lowColor}">Dips to ${p.minSocPct ?? "–"}% · reserve ${p.reserve ?? "–"}%</span></div>
-      ${all.length ? `<button class="arm${armedNow ? " on" : ""}" id="arm" aria-pressed="${armedNow}" ${scheduled.length || armedNames.length ? "" : "disabled"} title="${armedNow ? "Cancel reminders" : armedElsewhere ? "A different plan is armed — click to arm this one" : "Powerline will remind you at each start time"}">${armedNow ? "✓ Armed — reminders on" : armedElsewhere ? "Re-arm with this plan" : "Arm plan"}</button>` : ""}
+      ${all.length ? `<button class="arm${armedNow ? " on" : ""}" id="arm" aria-pressed="${armedNow}" ${scheduled.length || armedNames.length ? "" : 'disabled data-keep-disabled="1"'} title="${armedNow ? "Cancel reminders" : armedElsewhere ? "A different plan is armed — click to arm this one" : "Powerline will remind you at each start time"}">${armedNow ? "✓ Armed — reminders on" : armedElsewhere ? "Re-arm with this plan" : "Arm plan"}</button>` : ""}
     </div>`;
   const armBtn = root.querySelector<HTMLButtonElement>("#arm");
   if (armBtn) armBtn.onclick = () => (armedNow ? disarm() : scheduled.length ? arm() : disarm());
@@ -102,7 +102,8 @@ function render(raw: Plan) {
 function setBusy(on: boolean, label = "") {
   busy = on;
   root.classList.toggle("busy", on);
-  root.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button").forEach((el) => { el.disabled = on || (el.id === "arm" && el.dataset.keepDisabled === "1"); });
+  // Releasing the freeze must not re-enable a control render() disabled on purpose (Arm with nothing selected would otherwise disarm).
+  root.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button").forEach((el) => { el.disabled = on || el.dataset.keepDisabled === "1"; });
   root.setAttribute("aria-busy", String(on));
   if (label) status.textContent = label;
 }

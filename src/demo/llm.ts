@@ -21,7 +21,7 @@ const MAX_MESSAGES = 40;
 const MAX_CHARS = 60_000;
 
 export const SYSTEM_PROMPT = [
-  "You are Alexa+, speaking for Powerline, a home power copilot for a household with a solar array, a battery and an unreliable grid.",
+  "You are the voice assistant of a simulated Alexa+ host, speaking for Powerline, a home power copilot for a household with a solar array, a battery and an unreliable grid.",
   "Answer in one to three short spoken sentences. Never invent a number: every figure comes from a tool result. If a tool errors, say what failed in plain words.",
   "Call power_status before giving advice about the battery. For 'can I run X', call can_i_run. For planning, call plan_day, then offer to arm reminders; on yes call arm_plan.",
   "For reports (how did we do, what did the grid cost) call energy_report; for 'how long can we last if the grid goes' call outage_outlook; for a briefing or outlook call evening_briefing.",
@@ -34,6 +34,15 @@ export const SYSTEM_PROMPT = [
 ].join(" ");
 
 export const llmEnabled = Boolean(MODEL_ID);
+
+/** A tiny semaphore: Bedrock's per-model rate is shared by every visitor, so bursts queue here instead of failing there. */
+const MAX_IN_FLIGHT = 3;
+let inFlight = 0; const waiters: Array<() => void> = [];
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (inFlight >= MAX_IN_FLIGHT) await new Promise<void>((r) => waiters.push(r));
+  inFlight++;
+  try { return await fn(); } finally { inFlight--; waiters.shift()?.(); }
+}
 
 type Sender = (input: Record<string, unknown>) => Promise<{ output?: { message?: { content?: Array<Record<string, unknown>> } }; stopReason?: string }>;
 let send: Sender | null = null;
@@ -49,7 +58,13 @@ export function checkMessages(raw: unknown): Message[] | string {
   if (JSON.stringify(raw).length > MAX_CHARS) return "conversation too large";
   for (const m of raw as Message[]) {
     if (!m || (m.role !== "user" && m.role !== "assistant") || !Array.isArray(m.content) || m.content.length === 0) return "each message needs a role and content";
-    for (const c of m.content) if (c && typeof (c as { text?: unknown }).text === "string" && (c as { text: string }).text.length > 4_000) return "a single message is too long (4,000 characters)";
+    for (const c of m.content) {
+      if (!c || typeof c !== "object") return "each content block must be an object";
+      const b = c as { text?: unknown; toolUse?: unknown; toolResult?: { content?: unknown } };
+      if (typeof b.text === "string" && b.text.length > 4_000) return "a single message is too long (4,000 characters)";
+      if (b.toolResult !== undefined && (!b.toolResult || typeof b.toolResult !== "object" || !Array.isArray(b.toolResult.content) || !b.toolResult.content.every((x) => x && typeof x === "object"))) return "a toolResult needs a content array";
+      if (b.toolUse !== undefined && (!b.toolUse || typeof b.toolUse !== "object")) return "a toolUse must be an object";
+    }
   }
   return raw as Message[];
 }
@@ -112,15 +127,20 @@ export async function nextTurn(messages: Message[], tools: ToolSpec[]): Promise<
     const client = new BedrockRuntimeClient({});
     send = (input) => client.send(new ConverseCommand(input as never), { abortSignal: AbortSignal.timeout(TIMEOUT_MS) }) as never;
   }
-  // Bedrock throttles bursts; one short retry turns a 503 into a half-second pause the person never notices.
-  let res: Awaited<ReturnType<Sender>>;
-  try { res = await send(converseInput(messages, tools)); }
-  catch (e) {
-    const name = (e as { name?: string }).name ?? "", msg = (e as Error).message ?? "";
-    if (!/Throttling|TooManyRequests|ServiceUnavailable|ModelNotReady/i.test(`${name} ${msg}`)) throw e;
-    await new Promise((r) => setTimeout(r, 1_500 + Math.random() * 1_000));
-    res = await send(converseInput(messages, tools));
-  }
+  // Bedrock throttles bursts. Two things keep that away from the person: at most a few calls in
+  // flight at once (the rest queue briefly), and up to two backed-off retries on a throttle.
+  const res = await withSlot(async () => {
+    const input = converseInput(messages, tools);
+    let delay = 1_200;
+    for (let attempt = 0; ; attempt++) {
+      try { return await send!(input); }
+      catch (e) {
+        const name = (e as { name?: string }).name ?? "", msg = (e as Error).message ?? "";
+        if (attempt >= 2 || !/Throttling|TooManyRequests|ServiceUnavailable|ModelNotReady/i.test(`${name} ${msg}`)) throw e;
+        await new Promise((r) => setTimeout(r, delay + Math.random() * 800)); delay *= 2;
+      }
+    }
+  });
   const blocks = res.output?.message?.content ?? [];
   const text = blocks.map((b) => (typeof b.text === "string" ? b.text : "")).filter(Boolean).join(" ").trim();
   const toolCalls: ToolCall[] = blocks.flatMap((b) => {

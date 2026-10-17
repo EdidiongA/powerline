@@ -1,7 +1,7 @@
 # Powerline — Alexa+ home power copilot
 
 [![CI](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml/badge.svg)](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-119%20%2B%20headless%20browser-1e9e5a)](test/)
+[![tests](https://img.shields.io/badge/tests-133%20%2B%20headless%20browser-1e9e5a)](test/)
 [![MCP 2025-11-25](https://img.shields.io/badge/MCP-2025--11--25%20%C2%B7%20Streamable%20HTTP-1e9e5a)](https://modelcontextprotocol.io)
 [![MCP Apps](https://img.shields.io/badge/MCP%20Apps-3%20cards%20%C2%B7%20built--in%20host-4b7bb8)](src/ui/)
 [![AWS](https://img.shields.io/badge/AWS-Bedrock%20%C2%B7%20DynamoDB%20%C2%B7%20ECS%20Express-e8a33d)](docs/DEPLOY.md)
@@ -33,7 +33,7 @@ anyone can try it in a browser.
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
 | **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS) |
-| **Proven** | 119 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
+| **Proven** | 133 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
 | **For agents** | Agent Skill (`skills/`), prompts, household resource, 26-entry friction log, docs PR upstream |
 
 Supported inverter platforms: **Growatt** (ShinePhone API token) and **Victron Energy** (VRM Portal access
@@ -72,13 +72,13 @@ Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp` — [MCPJam In
 1. **Set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve**
 2. **Remember the iron uses 2000 watts for 30 minutes**
 3. **How's the power?** → dashboard card: state of charge, a plain verdict, the 24-hour ribbon
-4. **Can I run the iron for 30 minutes?** → *Not now — best time 09:00*, from the forecast, not a guess
+4. **Can I run the iron for 30 minutes?** → *yes*, or *Not now — best time 09:00* (on a fresh store at night), from the forecast, not a guess
 5. **Plan my power for today** → planner card; untick an appliance and watch it re-plan
 6. **How did we do this week?** → report card. A fresh simulated household starts with a seeded week of history (`SEED_HISTORY_DAYS=7`, set in `compose.yaml` and the deploy script), so there is something to report from the first minute; `npm run seed:history` does the same by hand.
 7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00 — run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600` to watch it land in about a minute
 8. **Use the evening_briefing tool** → one spoken paragraph (Bedrock when `BEDROCK_MODEL_ID` is set)
 
-Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (119; only the end-to-end suite touches the network, and only on localhost).
+Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (133; only the end-to-end suite touches the network, and only on localhost).
 Live inverter data: `POWER_SOURCE=victron VRM_DEMO=1 npm start` reads Victron's public demo installation.
 
 ## Quick start
@@ -90,7 +90,7 @@ npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
 npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
 npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
-npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 119 tests; e2e drives the real process with the official client
+npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 133 tests; e2e drives the real process with the official client
 ```
 
 Live telemetry:
@@ -244,7 +244,10 @@ curl localhost:3000/healthz                # backend, table, region, session cou
 `{pv_w, load_w, battery_w, soc_pct, grid_w, grid_available}`. Adding a brand is one file.
 
 - **Victron VRM** — one `stats?type=custom` call (`Pdc`, `ac_loads`, `bp`, `bs`, `gp`). Tested live against the VRM
-  demo installation (`VRM_DEMO=1`).
+  demo installation (`VRM_DEMO=1`). Grid presence is inferred from grid *power*: flow proves the grid is there, zero
+  flow is reported as *unknown* rather than *off* (a grid-tied system with the sun carrying the whole load sits at 0 W
+  all afternoon). VRM's documented attribute list has no AC-input-voltage code, which would settle it; on this
+  adapter outages are learned from `log_grid_event` ("NEPA has taken light") rather than detected.
 - **Growatt OpenAPI v1** — `plant/list → device/list → mix_last_data | tlx_last_data`. Tested against
   recorded payload shapes for both device families (`test/fixtures/growatt/`): day, night on grid, night
   outage, string-typed numbers from MIN/TLX units, sparse payloads and API errors. Not yet run against a
@@ -310,7 +313,7 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 - [x] `arm_plan`: reminders pushed at each start time without being asked
 - [x] Bedrock briefing with plain-facts fallback; DynamoDB store with conditional writes
 - [x] Per-household bearer tokens (fail-closed), session ↔ household binding, CORS for browser hosts
-- [x] Docker image + compose; CI on Ubuntu + Windows; 119 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
+- [x] Docker image + compose; CI on Ubuntu + Windows; 133 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
 - [x] MCP prompts, an Agent Skill, tool annotations, a household resource, and elicitation before the one destructive action
 - [x] History: hourly samples, energy reports with cost, outage outlook, and a forecast that learns the household's own load shape and real solar yield
 - [x] `scripts/deploy-ecs-express.sh` — one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI

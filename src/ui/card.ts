@@ -112,7 +112,8 @@ function render(raw: Status) {
   srcEl.textContent = `${typeof t.source === "string" ? t.source : "unknown source"}${pvSource === "weather" ? " · weather forecast" : pvSource === "provider" ? " · vendor forecast" : ""}${(raw as { profileIsDefault?: boolean }).profileIsDefault ? " · default profile — say “set up my solar”" : ""}`;
   const d = new Date(t.at);
   const off = typeof s.tzOffset === "number" ? s.tzOffset : 1;
-  tsEl.textContent = Number.isNaN(d.getTime()) ? "" : `${String((((d.getUTCHours() + off) % 24) + 24) % 24).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  const local = new Date(d.getTime() + off * 3.6e6); // shift the instant, then read UTC fields: exact for half-hour zones too
+  tsEl.textContent = Number.isNaN(d.getTime()) ? "" : `${String(local.getUTCHours()).padStart(2, "0")}:${String(local.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 app.ontoolresult = (result) => {

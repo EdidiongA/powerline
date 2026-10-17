@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DiskStore } from "../src/store/disk.js";
 import { DynamoStore, asConfigError, backoffMs, isConditionFailure, isRetryable } from "../src/store/dynamo.js";
-import { MAX_GRID_EVENTS, StoreConfigError, StoreConflictError, byteSize, normalize, type Household } from "../src/store/types.js";
+import { MAX_GRID_EVENTS, StoreConfigError, StoreConflictError, byteSize, emptyHousehold, normalize, type Household } from "../src/store/types.js";
 import { FakeDynamo, FakeGet, FakePut, awsError } from "./helpers/fake-dynamo.js";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "powerline-"));
@@ -268,4 +268,82 @@ test("a hand-edited or legacy store file cannot crash a read: records are saniti
   // And a write through the same record keeps working.
   const after = await store.update("broken", (h) => { h.appliances.push({ name: "pump", watts: 1, minutes: 1 }); });
   assert.equal(after.version, 1);
+});
+
+
+test("dynamo: a record written before versioning (no version attribute) can still be updated", async () => {
+  const fake = new FakeDynamo();
+  fake.items.set("HOUSEHOLD#old", { pk: "HOUSEHOLD#old", profile: null, appliances: [{ name: "iron", watts: 1800, minutes: 30 }], gridEvents: [], armedPlan: null, updatedAt: "2026-09-01T00:00:00.000Z" });
+  const s = store(fake);
+  const h = await s.update("old", (x) => { x.appliances.push({ name: "kettle", watts: 2000, minutes: 5 }); });
+  assert.equal(h.appliances.length, 2);
+  assert.match(fake.calls.find((c) => c.type === "put")!.input.ConditionExpression, /attribute_not_exists\(#v\)/);
+});
+
+test("sanitize: non-array collections and non-object profile/plan are treated as empty, never thrown on", () => {
+  for (const bad of [
+    { appliances: "abc" }, { appliances: {} }, { appliances: 5 }, { gridEvents: {} }, { gridEvents: "x" }, { samples: {} }, { samples: 7 },
+    { armedPlan: "x" }, { armedPlan: 3 }, { armedPlan: { items: {} } }, { armedPlan: { items: [{ name: "a", startAt: "2026-10-01T00:00:00Z" }] } }, { profile: "nope" }, { tariff: [] },
+  ]) {
+    assert.doesNotThrow(() => normalize({ ...emptyHousehold(), ...(bad as object) }), JSON.stringify(bad));
+    const h = normalize({ ...emptyHousehold(), ...(bad as object) });
+    assert.ok(Array.isArray(h.appliances) && Array.isArray(h.gridEvents) && Array.isArray(h.samples));
+  }
+});
+
+// ---- final-sweep regressions ------------------------------------------------
+
+test("disk store: a get() racing the first update() cannot clobber the committed write", async () => {
+  const dir = tmp();
+  writeFileSync(path.join(dir, "store.json"), JSON.stringify({ h: { ...emptyHousehold(), appliances: [{ name: "fridge", watts: 150, minutes: 60 }] } }));
+  // Make every read after the first land late: without the shared in-flight read, the get()'s stale
+  // snapshot would replace the cache after the update had persisted, and the next update would persist that.
+  const fsp = await import("node:fs").then((m) => m.promises);
+  const orig = fsp.readFile; let reads = 0;
+  (fsp as { readFile: unknown }).readFile = async (...a: Parameters<typeof orig>) => { const r = await (orig as (...x: unknown[]) => Promise<unknown>).apply(fsp, a); if (++reads > 1) await new Promise((r2) => setTimeout(r2, 50)); return r; };
+  try {
+    const s = new DiskStore(dir);
+    const [, got] = await Promise.all([s.update("h", (h) => { h.appliances.push({ name: "iron", watts: 2000, minutes: 30 }); }), s.get("h")]);
+    assert.ok(got.appliances.length >= 1);
+    await s.update("h", (h) => { h.appliances.push({ name: "kettle", watts: 1800, minutes: 5 }); });
+    assert.deepEqual(JSON.parse(readFileSync(path.join(dir, "store.json"), "utf8")).h.appliances.map((a: { name: string }) => a.name), ["fridge", "iron", "kettle"]);
+    assert.equal(reads, 1, "one read is shared by every caller that starts before it resolves");
+  } finally { (fsp as { readFile: unknown }).readFile = orig; }
+});
+
+test("disk store: a failed persist leaves the cache where the file is, and '__proto__' is an ordinary household id", async () => {
+  const dir = tmp();
+  const s = new DiskStore(dir);
+  await s.update("__proto__", (h) => { h.appliances.push({ name: "iron", watts: 2000, minutes: 30 }); });
+  assert.equal((await s.get("__proto__")).appliances.length, 1, "stored and read back as a key, not as Object.prototype");
+  assert.equal((await s.get("other")).appliances.length, 0, "no leak into other households");
+  const fsp = await import("node:fs").then((m) => m.promises);
+  const orig = fsp.rename;
+  (fsp as { rename: unknown }).rename = async () => { throw Object.assign(new Error("ENOSPC: no space left"), { code: "ENOSPC" }); };
+  try {
+    await assert.rejects(s.update("h", (h) => { h.appliances.push({ name: "kettle", watts: 1800, minutes: 5 }); }), /ENOSPC/);
+  } finally { (fsp as { rename: unknown }).rename = orig; }
+  assert.equal((await s.get("h")).appliances.length, 0, "the rejected write is not visible afterwards");
+});
+
+test("sanitize bounds timestamps and numbers so a hand-edited file cannot take every tool down", () => {
+  const h = normalize({
+    ...emptyHousehold(),
+    samples: [
+      { at: "+275760-09-13T00:00:00.000Z", pv_w: 1, load_w: 1, soc_pct: 50 },   // parses, but toISOString() after a tz shift throws
+      { at: "1700-01-01T00:00:00Z", pv_w: 1, load_w: 1, soc_pct: 50 },          // centuries old: out of bounds
+      { at: new Date(Date.now() - 3_600_000).toISOString(), pv_w: 100, load_w: 50, soc_pct: 60 },
+    ],
+    gridEvents: [{ at: "+275760-09-13T00:00:00.000Z", on: true }, { at: new Date().toISOString(), on: false }],
+    appliances: [{ name: "neg", watts: -5000, minutes: 30 }, { name: "zero", watts: 2000, minutes: 0 }, { name: "ok", watts: 2000, minutes: 30 }],
+    armedPlan: { armedAt: new Date().toISOString(), items: [
+      { name: "x", watts: 2000, minutes: 30, startAt: "+275760-09-13T00:00:00.000Z", source: "solar" },
+      { name: "y", watts: 2000, minutes: 30, startAt: new Date().toISOString(), source: "nuclear" as never },
+      { name: "z", watts: 2000, minutes: 30, startAt: new Date().toISOString(), source: "grid" },
+    ] },
+  } as Household);
+  assert.equal(h.samples.length, 1);
+  assert.equal(h.gridEvents.length, 1);
+  assert.deepEqual(h.appliances.map((a) => a.name), ["ok"]);
+  assert.deepEqual(h.armedPlan?.items.map((i) => i.name), ["z"]);
 });

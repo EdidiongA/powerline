@@ -9,7 +9,7 @@ import { hourLabel, reasonFor } from "../config.js";
 import { PLANNER_URI, cardHtml } from "../views.js";
 import { presetFor } from "../presets.js";
 
-const applianceList = z.array(z.object({ name: z.string(), watts: z.number().positive(), minutes: z.number().positive() })).optional();
+const applianceList = z.array(z.object({ name: z.string().trim().min(1).max(60), watts: z.number().positive().max(50_000), minutes: z.number().positive().max(1_440) })).max(100).optional();
 
 /**
  * Which appliances to plan. Two callers send an empty list with opposite meanings: a
@@ -104,8 +104,8 @@ export function registerPlanningTools(server: McpServer, ctx: SessionContext): v
         if (!yes) return { content: [{ type: "text", text: `Kept the armed plan for ${pending.join(", ")}; nothing changed.` }], structuredContent: { armed: [], skipped: [], kept: pending } };
       } catch (e) {
         const msg = (e as Error).message ?? "";
-        if (/timed? ?out|timeout/i.test(msg)) {
-          // The person was still looking at the question. Silence is not consent.
+        if (/timed? ?out|timeout|invalid|validation|expected|schema|parse/i.test(msg)) {
+          // The person was still looking at the question, or the host answered in a shape we cannot read. Neither is consent.
           return { content: [{ type: "text", text: `No answer arrived, so I kept the armed plan for ${pending.join(", ")}; nothing changed. Ask again to replace it.` }], structuredContent: { armed: [], skipped: [], kept: pending } };
         }
         // A host that advertised elicitation but cannot actually answer must not block the user.
@@ -117,16 +117,20 @@ export function registerPlanningTools(server: McpServer, ctx: SessionContext): v
       return { content: [{ type: "text", text: h.appliances.length ? "Nothing selected, so nothing is armed." : "Nothing to arm — add an appliance first." }], structuredContent: { armed: [], skipped: [] } };
     }
     const plan = planDay(input, list);
-    const base = Date.parse(t.at);
+    // Slots are whole clock hours in the forecast, so anchor start times to the top of the current
+    // hour: "iron at 08:00" must not become a reminder at 08:50.
+    const nowMs = Number.isFinite(Date.parse(t.at)) ? Date.parse(t.at) : Date.now(); // assess() tolerates an unparseable stamp; so must this
+    const base = Math.floor(nowMs / 3.6e6) * 3.6e6;
     const items: ArmedItem[] = plan.items
       .filter((i) => i.startHour !== null && i.source !== "none")
       .map((i) => ({ name: i.name, watts: i.watts, minutes: i.minutes, source: i.source as ArmedItem["source"], startAt: new Date(base + i.startHour! * 3.6e6).toISOString() }));
     const skipped = plan.items.filter((i) => i.startHour === null).map((i) => i.name);
 
     // Anything scheduled for right now is told right now, rather than waiting for the monitor.
-    const immediate = items.filter((i) => Date.parse(i.startAt) <= base + 60_000);
+    const immediate = items.filter((i) => Date.parse(i.startAt) <= nowMs + 60_000);
     for (const i of immediate) {
       i.firedAt = t.at;
+      ctx.delivered?.add(`${i.name}@${i.startAt}`); // this session has said it; its monitor must not say it again
       server.sendLoggingMessage({ level: "warning", logger: "powerline.alerts", data: { kind: "reminder", text: `Run the ${i.name} now — ${reasonFor(i.source)}.`, appliance: i.name, startAt: i.startAt, source: i.source } }).catch(() => {});
     }
     await updateHousehold(ctx.userId, (hh) => { hh.armedPlan = items.length ? { armedAt: t.at, items } : null; });

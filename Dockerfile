@@ -9,7 +9,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json vite.config.ts ./
+COPY tsconfig.json tsconfig.ui.json vite.config.ts ./
 COPY src ./src
 RUN npm run build
 

@@ -94,12 +94,14 @@ export class GrowattSource implements TelemetrySource {
       const toUser = num("pacToUserTotal", "pactouser") ?? 0;
       const toGrid = num("pacToGridTotal", "pactogrid") ?? 0;
       const grid = toUser - toGrid;
+      const socVal = num("soc", "SOC", "capacity");
+      if (socVal === null) throw new Error("no state of charge in the Growatt payload"); // serve the last good reading as stale instead of 0 %
       this.last = {
         at: new Date().toISOString(),
         pv_w: Math.round(pv),
         load_w: Math.round(load),
         battery_w: Math.round(charge - discharge),
-        soc_pct: num("soc", "SOC", "capacity") ?? 0,
+        soc_pct: socVal,
         grid_w: Math.round(grid),
         // vac1 is the surest signal; when a model omits it, any import from grid proves it is present.
         grid_available: num("vac1", "vAc1") !== null ? (num("vac1", "vAc1") ?? 0) > 100 : toUser > 0 ? true : null,

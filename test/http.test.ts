@@ -112,7 +112,7 @@ test("oversized bodies are refused and the session ceiling returns 503 with Retr
 });
 
 test("the simulated host is served, and /demo/llm answers in rules mode with the same auth as /mcp", async () => {
-  const s = await boot({ API_TOKENS: "home:demo-token-0123456789", DEMO_LLM_PER_MINUTE: "4" });
+  const s = await boot({ API_TOKENS: "home:demo-token-0123456789", DEMO_LLM_PER_MINUTE: "7" });
   try {
     const page = await fetch(`${s.url}/demo`);
     assert.equal(page.status, 200);
@@ -138,8 +138,37 @@ test("the simulated host is served, and /demo/llm answers in rules mode with the
       { role: "user", content: [{ toolResult: { toolUseId: "1", content: [{ text: "Solar 0 W, battery 55%." }] } }] },
     ], tools: [] }) })).json() as { text: string; toolCalls: unknown[] };
     assert.equal(spoken.text, "Solar 0 W, battery 55%."); assert.deepEqual(spoken.toolCalls, []);
-    // Rate limit: four per minute in this boot (every authenticated POST counts), the fifth is refused.
+    // Malformed blocks are a 400, never a 503 blamed on the model; chunked bodies are byte-counted like /mcp.
+    const nullBlock = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: H, body: JSON.stringify({ messages: [{ role: "user", content: [null] }], tools: [] }) });
+    assert.equal(nullBlock.status, 400);
+    const badResult = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: H, body: JSON.stringify({ messages: [{ role: "user", content: [{ toolResult: { toolUseId: "1", content: "no" } }] }], tools: [] }) });
+    assert.equal(badResult.status, 400);
+    const payload = JSON.stringify({ messages: [{ role: "user", content: [{ text: "x".repeat(3_000) }] }], tools: [{ name: "t", description: "y".repeat(250_000) }] });
+    const big = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: H, duplex: "half", body: new ReadableStream({ start(ctl) { for (let i = 0; i < payload.length; i += 16_384) ctl.enqueue(new TextEncoder().encode(payload.slice(i, i + 16_384))); ctl.close(); } }) } as RequestInit);
+    assert.equal(big.status, 413, "a chunked body (no Content-Length) over the ceiling is refused by counted bytes");
+    // Rate limit: seven per minute in this boot (every authenticated POST counts, keyed per client), the eighth is refused.
     const fourth = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: H, body: JSON.stringify({ messages: [{ role: "user", content: [{ text: "hi" }] }] }) });
     assert.equal(fourth.status, 429); assert.equal(fourth.headers.get("retry-after"), "60");
   } finally { await s.stop(); }
+});
+
+test("rate limits are per caller, with a global ceiling a forged X-Forwarded-For cannot lift", async () => {
+  const s = await boot({ API_TOKENS: "home:demo-token-0123456789", DEMO_LLM_PER_MINUTE: "1" });
+  try {
+    const H = { "content-type": "application/json", authorization: "Bearer demo-token-0123456789" };
+    const body = JSON.stringify({ messages: [{ role: "user", content: [{ text: "hi" }] }], tools: [] });
+    const codes: number[] = [];
+    for (let i = 0; i < 12; i++) codes.push((await fetch(`${s.url}/demo/llm`, { method: "POST", headers: { ...H, "x-forwarded-for": `10.0.0.${i}, 203.0.113.1` }, body })).status);
+    assert.deepEqual(codes.slice(0, 10), Array(10).fill(200), "ten distinct callers each get their one call");
+    assert.deepEqual(codes.slice(10), [429, 429], "the eleventh forged caller hits the global ceiling (10× per-caller)");
+    const same = await fetch(`${s.url}/demo/llm`, { method: "POST", headers: { ...H, "x-forwarded-for": "10.0.0.0" }, body });
+    assert.equal(same.status, 429, "a caller who already used its allowance is refused");
+  } finally { await s.stop(); }
+});
+
+test("the version the server reports is the version in package.json", async () => {
+  const { VERSION } = await import("../src/server.js");
+  const { readFileSync } = await import("node:fs");
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+  assert.equal(VERSION, pkg.version, "bump src/server.ts VERSION with package.json");
 });

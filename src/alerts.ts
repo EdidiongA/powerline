@@ -28,10 +28,11 @@ export function startAlertMonitor(
   server: McpServer, source: TelemetrySource, userId: string,
   intervalMs = envMs("ALERT_INTERVAL_MS", 30_000),
   repeatMs = envMs("ALERT_REPEAT_MS", 15 * 60_000),
+  delivered?: Set<string>,
 ): AlertMonitor {
   let lowAt = 0, criticalAt = 0; // last time each alert was sent (0 = armed)
   let lastGrid: boolean | null | undefined;
-  const remindedHere = new Set<string>(); // reminders this session has already delivered
+  const remindedHere = delivered ?? new Set<string>(); // reminders this session has already delivered (shared with arm_plan's immediate path)
   let lastSeenAt = 0;                      // telemetry time at the previous tick
   const due = (last: number) => last === 0 || Date.now() - last >= repeatMs;
 

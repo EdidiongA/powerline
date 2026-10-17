@@ -31,6 +31,9 @@ test("checkMessages bounds and validates what the browser sends", () => {
   assert.equal(typeof checkMessages(Array.from({ length: 41 }, () => ({ role: "user", content: [{ text: "x" }] }))), "string");
   assert.equal(typeof checkMessages([{ role: "user", content: [{ text: "x".repeat(70_000) }] }]), "string");
   assert.ok(Array.isArray(checkMessages([{ role: "user", content: [{ text: "hi" }] }])));
+  assert.equal(typeof checkMessages([{ role: "user", content: [null] }]), "string", "a null block is refused, not thrown on later");
+  assert.equal(typeof checkMessages([{ role: "user", content: [{ toolResult: { toolUseId: "1", content: "text" } }] }]), "string");
+  assert.equal(typeof checkMessages([{ role: "assistant", content: [{ toolUse: 7 }] }]), "string");
 });
 
 test("repairHistory: a browser that lost a hop never sends Bedrock a non-alternating or unanswered history", () => {

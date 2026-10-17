@@ -5,7 +5,8 @@
  */
 import type { SystemProfile } from "./forecast.js";
 
-const num = (v: string | undefined, fallback: number): number => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : fallback);
+/** A blank value (`TZ_OFFSET=` left in a .env) is "unset", not 0: Number("") is 0 and would silently move the household to UTC. */
+const num = (v: string | undefined, fallback: number): number => (v !== undefined && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : fallback);
 
 /** Household UTC offset in hours. Default +1 = Africa/Lagos. Per-household storage is the next step. */
 export const TZ_OFFSET = num(process.env.TZ_OFFSET, 1);

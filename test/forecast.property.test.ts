@@ -92,7 +92,8 @@ test("canRun: 'ok' means the reserve holds; a best start, when given, fits the h
     const app = { name: "x", watts: Math.round(50 + r() * 5000), minutes: Math.round(5 + r() * 240) };
     const res = canRun(input, app);
     const floor = input.profile.reserveSocPct;
-    if (res.ok) assert.ok(res.minSocWithPct > floor, `seed ${seed}`);
+    // ok ⇒ the reserve holds, or the baseline was already under it and this run costs the battery nothing (the grid/sun carries it).
+    if (res.ok) assert.ok(res.minSocWithPct > floor || (res.minSocWithoutPct <= floor && res.minSocWithPct >= res.minSocWithoutPct - 0.11), `seed ${seed}: ok=${res.ok} with=${res.minSocWithPct} without=${res.minSocWithoutPct} floor=${floor}`);
     assert.ok(finite(res.socAfterPct) && finite(res.minSocWithPct) && finite(res.minSocWithoutPct), `seed ${seed}`);
     assert.ok(res.minSocWithPct <= res.minSocWithoutPct + 0.11, `seed ${seed}: running it raised the minimum`);
     if (res.bestStartHour !== null) {

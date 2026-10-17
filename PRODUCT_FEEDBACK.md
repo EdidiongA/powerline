@@ -93,7 +93,7 @@ into a control surface; nothing else in the stack changes what an assistant can 
 
 ## 3. MCPJam Inspector (`@mcpjam/inspector`) as the MCP Apps host
 
-**Used for:** every manual test and the demo video — Add server → HTTP → `/mcp`, Tools / Prompts /
+**Used for:** manual testing and development (the video is recorded in Powerline's own `/demo` host) — Add server → HTTP → `/mcp`, Tools / Prompts /
 Resources tabs, the Playground with a hosted Claude Haiku 4.5, notifications panel for the alert stream.
 
 **What worked well.** It renders MCP App cards and it shows the raw notifications, which is how I
@@ -271,6 +271,13 @@ package names.
 audience is the first time I have wanted to ship a voice integration.
 
 ---
+
+## General-purpose tooling (no separate section)
+
+Hono, Zod, Vite (+ vite-plugin-singlefile), esbuild, tsx, jsdom, Playwright, cross-env, Docker, GitHub
+Actions and GHCR, AWS CloudShell, and Claude as pair-programmer and reviewer were all used and all
+behaved; none produced friction worth a section. Hono's `parseBody()` throwing on a non-form body and
+Playwright needing an explicit `executablePath` in CI are the only notes, both one-liners.
 
 ## Summary for the AWS Builder mini-challenge
 

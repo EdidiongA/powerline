@@ -191,7 +191,7 @@ test("log_grid_event uses telemetry time, records only state changes, and keeps 
   assert.match(earlier.text, /Logged grid ON/);
   const { getHousehold } = await import("../src/store/index.js");
   const h = await getHousehold("h12");
-  assert.deepEqual(h.gridEvents.map((e) => [e.at, e.on]), [["2026-10-01T18:00:00Z", true], [NIGHT, false]]);
+  assert.deepEqual(h.gridEvents.map((e) => [e.at, e.on]), [["2026-10-01T18:00:00.000Z", true], [NIGHT, false]]); // timestamps are stored canonical
   await close();
 });
 
@@ -379,5 +379,28 @@ test("per-household timezone: the profile's offset drives local hours, labels an
     const r = await call(t, t === "can_i_run" ? { appliance: "iron" } : t === "energy_report" ? { period: "week" } : {});
     assert.doesNotMatch(r.text, /NaN|undefined|\d+\.5:\d\d/, `${t} must stay numeric and print whole-hour clocks in a half-hour zone`);
   }
+  await close();
+});
+
+
+test("armed start times sit on the hour the plan showed, not on the current minute; grid events must be recent and compare with their own moment", async () => {
+  const at = "2026-10-01T19:50:00.000Z"; // 20:50 Lagos
+  const { call, close } = await connect("anchor", { name: "fake", current: async () => ({ at, pv_w: 0, load_w: 300, battery_w: -300, soc_pct: 70, grid_w: 0, grid_available: false, source: "fake" }) });
+  await call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 });
+  await call("add_appliance", { name: "iron", watts: 1800, minutes: 30 });
+  const armed = await call("arm_plan");
+  const items = armed.structuredContent!.armed as Array<{ startAt: string }>;
+  assert.ok(items.length === 1, armed.text);
+  assert.match(items[0].startAt, /:00:00\.000Z$/, `start is on the hour, got ${items[0].startAt} (plan text: ${armed.text})`);
+  // Grid events: the future and the distant past are refused; a backdated event is compared with the state at that time.
+  assert.equal((await call("log_grid_event", { on: false, at: "2999-01-01T00:00:00Z" })).isError, true);
+  assert.equal((await call("log_grid_event", { on: false, at: "2020-01-01T00:00:00Z" })).isError, true);
+  assert.match((await call("log_grid_event", { on: false })).text, /Logged grid OFF/);
+  assert.match((await call("log_grid_event", { on: true, at: "2026-10-01T18:00:00Z" })).text, /Logged grid ON/, "an earlier ON is a new fact about 19:00, not a repeat of the later OFF");
+  assert.match((await call("log_grid_event", { on: false })).text, /nothing new/);
+  // Tiny appliances never round to zero.
+  assert.match((await call("add_appliance", { name: "led", watts: 0.4, minutes: 0.2 })).text, /1 W for 1 min/);
+  // A 101 kW inverter is a big inverter, not 0.101 kW.
+  assert.match((await call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 101, reserveSocPct: 20 })).text, /101 kW inverter/);
   await close();
 });

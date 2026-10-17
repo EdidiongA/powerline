@@ -23,7 +23,8 @@ export function registerBriefingTools(server: McpServer, ctx: SessionContext, ll
     const heavy = h.appliances.filter((a) => a.watts >= 1000).map((a) => a.name);
     const facts = [
       `Battery ${t.soc_pct}%, reserve ${profile.reserveSocPct}%.`,
-      f.hitsFloor ? `Reserve reached in ${f.hoursToFloor!.toFixed(1)} h; lowest ${f.minSocPct}%.` : `Battery stays above reserve overnight; lowest ${f.minSocPct}%.`,
+      t.soc_pct <= profile.reserveSocPct ? `Battery is already at or below the reserve; lowest expected ${f.minSocPct}%.`
+        : f.hitsFloor ? `Reserve reached in ${f.hoursToFloor!.toFixed(1)} h; lowest ${f.minSocPct}%.` : `Battery stays above reserve overnight; lowest ${f.minSocPct}%.`,
       gridOn ? `Grid expected on in ${gridOn} of the next 24 hours.` : `No grid expected tonight.`,
       h.appliances.length ? `Known heavy appliances: ${heavy.join(", ") || "none"}.` : "",
     ].filter(Boolean).join(" ");

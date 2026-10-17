@@ -52,17 +52,18 @@ export function registerReportTools(server: McpServer, ctx: SessionContext): voi
     const { h, t, profile, input, localHour, tz } = await assess(ctx);
     const hours = autonomyHours(input, profile);
     const probs = gridProbabilityByHour(h.gridEvents, new Date(t.at).getUTCDay());
+    const probsTomorrow = gridProbabilityByHour(h.gridEvents, (new Date(t.at).getUTCDay() + 1) % 7);
     const nowUtc = new Date(t.at).getUTCHours();
     const offHours: number[] = [];
-    for (let i = 0; i < 24; i++) { const p = probs[(nowUtc + i) % 24]; if (p !== null && p < 0.5) offHours.push(i); }
+    for (let i = 0; i < 24; i++) { const p = (nowUtc + i >= 24 ? probsTomorrow : probs)[(nowUtc + i) % 24]; if (p !== null && p < 0.5) offHours.push(i); }
     const ranges = offHours.reduce<Array<[number, number]>>((acc, hr) => { const last = acc[acc.length - 1]; if (last && last[1] === hr - 1) last[1] = hr; else acc.push([hr, hr]); return acc; }, [])
       .map(([a, b]) => `${hourLabel(localHour, a)}–${hourLabel(localHour, b + 1)}`);
     const nowMs = Date.parse(t.at);
-    const until = hours === null || !Number.isFinite(nowMs) ? null : localClock(new Date(nowMs + hours * 3_600_000).toISOString(), tz);
+    const until = hours === null || hours >= 48 || !Number.isFinite(nowMs) ? null : localClock(new Date(nowMs + hours * 3_600_000).toISOString(), tz);
     const autonomy = hours === null ? `The battery is already at or below your ${profile.reserveSocPct}% reserve, so there is no margin if the grid goes off now.`
       : hours >= 48 ? `If the grid went off now, the battery would hold above the ${profile.reserveSocPct}% reserve for more than two days at this pattern.`
       : `If the grid went off now, the battery would reach the ${profile.reserveSocPct}% reserve in about ${hours < 1 ? "an hour" : `${Math.round(hours)} hours`}${until ? ` — around ${until}` : ""}.`;
-    const pattern = ranges.length ? `From this household's history the grid is usually off ${ranges.join(", ")}.` : h.gridEvents.length < 4 ? "Not enough grid history yet to say when it is usually off; log a few on/off events or leave a session open." : "No usual off-hours stand out in the next 24 h.";
+    const pattern = ranges.length ? `From this household's history the grid is usually off ${ranges.join(", ")}.` : h.gridEvents.length < 4 ? "Not enough grid history yet to say when it is usually off; log a few on/off events, or let it watch the grid for a day or two." : "No usual off-hours stand out in the next 24 h.";
     return { content: [{ type: "text", text: `${autonomy} ${pattern}` }], structuredContent: { autonomyHours: hours, reserveReachedAt: until, usualOffHoursFromNow: offHours, usualOffLocalHours: offHours.map((i) => (localHour + i) % 24), gridOn: t.grid_available } };
   });
 

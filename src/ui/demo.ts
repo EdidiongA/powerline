@@ -14,7 +14,7 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { AppBridge, PostMessageTransport, getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 
-type Tool = { name: string; description?: string; inputSchema: unknown; _meta?: Record<string, unknown> };
+type Tool = { name: string; description?: string; inputSchema: { type: "object"; [k: string]: unknown }; _meta?: Record<string, unknown> };
 type ToolResult = { content: Array<{ type: string; text?: string }>; structuredContent?: unknown; isError?: boolean; _meta?: Record<string, unknown> };
 type Block = { text?: string } | { toolUse?: { toolUseId: string; name: string; input: unknown } } | { toolResult?: { toolUseId: string; content: Array<{ text: string }>; status?: "success" | "error" } };
 type Message = { role: "user" | "assistant"; content: Block[] };
@@ -40,18 +40,20 @@ function add(el: HTMLElement) { thread.appendChild(el); el.scrollIntoView({ bloc
 function you(text: string) { const d = document.createElement("div"); d.className = "msg you"; d.textContent = text; add(d); }
 function alexa(text: string, toolNote?: string) {
   const d = document.createElement("div"); d.className = "msg alexa";
-  d.innerHTML = `<div class="who">Alexa+ · Powerline</div><div>${esc(text)}</div>${toolNote ? `<div class="tool">${toolNote}</div>` : ""}`;
+  d.innerHTML = `<div class="who">Assistant · Powerline</div><div>${esc(text)}</div>${toolNote ? `<div class="tool">${toolNote}</div>` : ""}`;
   add(d); if (speak) say(text);
 }
 function toast(kind: string, text: string, sub?: string) {
   const d = document.createElement("div"); d.className = `toast ${esc(kind)}`;
+  // A pushed reminder is the headline moment; assistive tech must hear it too.
+  d.setAttribute("role", "status"); d.setAttribute("aria-live", kind === "critical" || kind === "alarm" ? "assertive" : "polite");
   d.innerHTML = `${esc(text)}<small>${esc(sub ?? `pushed by Powerline · ${kind}`)}</small>`;
   add(d); if (speak) say(text);
 }
 let thinking: HTMLElement | null = null;
 function setBusy(on: boolean, label = "Thinking…") {
   busy = on; send.disabled = on; mic.disabled = on || !SR; input.disabled = on;
-  if (on) { thinking = add(Object.assign(document.createElement("div"), { className: "thinking", textContent: label })); }
+  if (on) { thinking = add(Object.assign(document.createElement("div"), { className: "thinking", textContent: label })); thinking.setAttribute("role", "status"); }
   else { thinking?.remove(); thinking = null; input.focus(); }
 }
 
@@ -71,28 +73,39 @@ async function renderCard(tool: Tool, args: Record<string, unknown>, result: Too
   iframe.setAttribute("sandbox", "allow-scripts");
   iframe.title = `${tool.name} card`;
   wrap.appendChild(iframe); add(wrap);
-  const theme = (document.documentElement.dataset.theme as "light" | "dark" | undefined) ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const bridge = new AppBridge(client!, { name: "powerline-demo-host", version: VERSION }, { serverTools: {}, logging: {} }, { hostContext: { theme, displayMode: "inline", availableDisplayModes: ["inline"] } });
+  // The bridge is NOT bound to the current Client: a card must keep working after the session is reaped or the
+  // server is redeployed, so its tool calls go through callTool(), which re-initialises on a 404 like the chat does.
+  const bridge = new AppBridge(null, { name: "powerline-demo-host", version: VERSION }, { serverTools: {}, logging: {} }, { hostContext: hostContext() });
+  bridge.oncalltool = async (p) => (await callTool(p.name, (p.arguments ?? {}) as Record<string, unknown>)) as never;
   bridge.addEventListener("sizechange", ({ height }) => { if (typeof height === "number" && height > 40) iframe.style.height = `${Math.min(900, Math.ceil(height))}px`; });
   bridge.oninitialized = () => { void bridge.sendToolInput({ arguments: args }); void bridge.sendToolResult(result as never); };
   bridge.onloggingmessage = ({ data }) => console.log("[card]", data);
   // srcdoc so the card has no origin to leak; the bridge talks over postMessage only.
   iframe.srcdoc = html;
-  iframe.addEventListener("load", () => { void bridge.connect(new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!)); }, { once: true });
-  themedBridges.push(bridge);
-  while (themedBridges.length > 20) { // keep the page light: oldest cards go static
-    const old = themedBridges.shift()!;
-    void old.close().catch(() => {});
+  iframe.addEventListener("load", () => { try { bridge.setHostContext(hostContext()); } catch { /* not yet connected: the constructor value stands */ } void bridge.connect(new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!)).catch((e) => console.warn("card bridge", e)); }, { once: true });
+  liveCards.push({ bridge, wrap });
+  while (liveCards.length > 20) { // keep the page light: the oldest card goes static, and says so
+    const old = liveCards.shift()!;
+    void old.bridge.close().catch(() => {});
+    const note = document.createElement("div"); note.className = "stale"; note.textContent = "This card is no longer live — ask again for a fresh one.";
+    old.wrap.appendChild(note); old.wrap.classList.add("static");
   }
 }
-const themedBridges: AppBridge[] = [];
+const liveCards: Array<{ bridge: AppBridge; wrap: HTMLDivElement }> = [];
+const currentTheme = (): "light" | "dark" => (document.documentElement.dataset.theme as "light" | "dark" | undefined) ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+const hostContext = () => ({ theme: currentTheme(), displayMode: "inline" as const, availableDisplayModes: ["inline" as const] });
 
 // ---------- the conversation loop ----------
 async function llm(messages: Message[]): Promise<LlmReply> {
   const res = await fetch("/demo/llm", { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ messages, tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) }) });
   if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
-  return (await res.json()) as LlmReply;
+  let r: Partial<LlmReply>;
+  try { r = (await res.json()) as Partial<LlmReply>; } catch { throw new Error("the model endpoint returned something that was not JSON"); }
+  if (!r || typeof r !== "object") throw new Error("the model endpoint returned an unexpected response");
+  // Never trust the shape: a proxy page or a half reply must degrade to "no answer", not a TypeError on screen.
+  const toolCalls = (Array.isArray(r.toolCalls) ? r.toolCalls : []).filter((c) => c && typeof c.name === "string" && typeof c.id === "string").map((c) => ({ ...c, input: c.input && typeof c.input === "object" ? c.input : {} }));
+  return { mode: r.mode === "bedrock" ? "bedrock" : "rules", text: typeof r.text === "string" ? r.text : "", toolCalls, stop: typeof r.stop === "string" ? r.stop : "" };
 }
 const textOf = (r: ToolResult) => r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n").trim();
 
@@ -113,8 +126,8 @@ async function reconnect(): Promise<boolean> {
   return !!client;
 }
 async function callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
-  if (!client) throw new Error("not connected");
-  try { return (await client.callTool({ name, arguments: args })) as ToolResult; }
+  if (!client && !(await reconnect())) throw new Error("not connected"); // a card click after the stream dropped recovers like the chat does
+  try { return (await client!.callTool({ name, arguments: args })) as ToolResult; }
   catch (e) {
     if (!sessionGone(e) || !(await reconnect())) throw e;
     return (await client!.callTool({ name, arguments: args })) as ToolResult; // once more on the fresh session
@@ -123,7 +136,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<To
 
 async function turn(userText: string) {
   if (busy) return;
-  if (!client && !(await reconnect())) { you(userText); alexa("Not connected to Powerline yet — check the server and reload."); return; }
+  if (!client && !(await reconnect())) { you(userText); alexa(conn.textContent === "token required" ? "This server needs a token — click the red pill in the header to enter it." : "Not connected to Powerline yet — check the server and reload."); return; }
   you(userText);
   trimHistory(); // trim first so `mark` points at a real position after the shift
   const mark = history.length; // on any failure the turn is rolled back, so roles keep alternating for Bedrock
@@ -178,7 +191,7 @@ if (!SR) { mic.disabled = true; mic.title = "Speech recognition is not available
 else mic.onclick = () => {
   const rec = new SR(); rec.lang = "en-US"; rec.interimResults = false;
   mic.setAttribute("aria-pressed", "true");
-  rec.onresult = (ev) => { const t = ev.results[0]?.[0]?.transcript ?? ""; mic.setAttribute("aria-pressed", "false"); if (t) { input.value = ""; void turn(t); } };
+  rec.onresult = (ev: SpeechRecognitionEvent) => { const t = ev.results[0]?.[0]?.transcript ?? ""; mic.setAttribute("aria-pressed", "false"); if (t) { input.value = ""; void turn(t); } };
   rec.onerror = () => { mic.setAttribute("aria-pressed", "false"); alexa("I didn't catch that."); };
   rec.onend = () => mic.setAttribute("aria-pressed", "false");
   try { rec.start(); } catch { mic.setAttribute("aria-pressed", "false"); }
@@ -189,7 +202,10 @@ $<HTMLButtonElement>("theme").onclick = () => {
   const cur = document.documentElement.dataset.theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   const next = cur === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = next;
-  for (const b of themedBridges) void b.sendHostContextChanged({ theme: next }).catch(() => {});
+  // setHostContext keeps the bridge's own copy current (a card that re-reads getHostContext() later sees the new theme) and notifies the view.
+  // Only connected bridges: setHostContext fires a notification whose rejection on a transport-less bridge is not catchable here;
+  // a card still loading picks the theme up from hostContext() just before it connects.
+  for (const { bridge } of liveCards) { try { if (bridge.transport) bridge.setHostContext(hostContext()); } catch { /* a closed bridge */ } }
 };
 
 // ---------- connection ----------
@@ -201,34 +217,39 @@ async function connect(quiet = false) {
     if (n.method === "notifications/message") { const d = (n.params as { data?: { kind?: string; text?: string } }).data; if (d?.text) toast(d.kind ?? "alert", d.text); }
   };
   // Elicitation: Powerline asks before replacing an armed plan; answer with a plain confirm().
-  // @ts-expect-error — spec-method registration takes (method, handler)
   c.setRequestHandler("elicitation/create", async (req: { params?: { message?: string } }) => {
     const ok = confirm(req.params?.message ?? "Powerline is asking for confirmation.");
     return { action: ok ? "accept" : "decline", content: ok ? { replace: true } : undefined };
   });
+  let listed: Tool[];
   try {
     await c.connect(transport);
+    listed = (await c.listTools()).tools as Tool[]; // inside the try: a server that drops between the two must not leave an unhandled rejection and a stuck pill
   } catch (e) {
     const msg = (e as Error).message;
-    if (/401|Unauthorized/.test(msg)) { conn.textContent = "token required"; conn.className = "pill bad"; askToken(); return; }
+    if (/401|Unauthorized/.test(msg)) { conn.textContent = "token required"; conn.className = "pill bad"; askToken(token ? "That token was not accepted — check it and try again." : undefined); return; }
     conn.textContent = "not connected"; conn.className = "pill bad";
-    alexa(`Could not connect to Powerline at ${location.origin}/mcp: ${msg}`);
+    if (!quiet) alexa(`Could not connect to Powerline at ${location.origin}/mcp: ${msg}`);
     return;
   }
-  client = c;
+  client = c; tools = listed;
   c.onclose = () => { if (client === c) { client = null; conn.textContent = "disconnected — reconnecting on next message"; conn.className = "pill bad"; } };
-  tools = (await c.listTools()).tools as Tool[];
   conn.textContent = `connected · ${tools.length} tools`; conn.className = "pill ok";
   if (quiet) return;
   const health = await fetch("/healthz").then((r) => r.json()).catch(() => null) as { telemetry?: string; store?: { backend?: string }; llm?: boolean } | null;
   brain.textContent = health?.llm ? "Bedrock" : "rules (no Bedrock)";
   alexa(`Hi. I'm connected to Powerline${health?.telemetry ? ` (${health.telemetry})` : ""}. Ask me how the power is, whether you can run something, or to plan the day.`);
 }
-function askToken() {
-  const dlg = $<HTMLDialogElement>("tokenDialog"), inp = $<HTMLInputElement>("tokenInput");
-  $<HTMLButtonElement>("tokenOk").onclick = () => { token = inp.value.trim(); sessionStorage.setItem("powerline.token", token); dlg.close(); void connect(); };
-  dlg.showModal();
+function askToken(problem?: string) {
+  const dlg = $<HTMLDialogElement>("tokenDialog"), inp = $<HTMLInputElement>("tokenInput"), err = $<HTMLParagraphElement>("tokenError");
+  err.textContent = problem ?? ""; err.hidden = !problem;
+  // The dialog's form has method="dialog", so Enter and the button both close it with returnValue "ok"; Escape leaves it "".
+  dlg.onclose = () => { if (dlg.returnValue !== "ok") return; token = inp.value.trim(); sessionStorage.setItem("powerline.token", token); void connect(); };
+  dlg.returnValue = ""; // persists across opens: without this, Escape after one submit would re-submit the rejected token forever
+  if (!dlg.open) dlg.showModal();
+  inp.focus();
 }
+conn.onclick = () => { if (conn.textContent === "token required") askToken(); };
 
 // ---------- wiring ----------
 $<HTMLFormElement>("form").onsubmit = (e) => { e.preventDefault(); const t = input.value.trim(); if (!t) return; input.value = ""; void turn(t); };

@@ -13,7 +13,8 @@ import { DEFAULT_PROFILE, TZ_OFFSET, localHourOf } from "./config.js";
 import { learnedLoadProfile, learnedPvFactor } from "./history.js";
 import { weather as defaultWeather, type OpenMeteo } from "./weather.js";
 
-export interface SessionContext { userId: string; source: TelemetrySource; weather?: OpenMeteo }
+/** `delivered` is the per-session set of reminders already announced ("name@startAt"), shared between the tools and this session's alert monitor so neither repeats the other. */
+export interface SessionContext { userId: string; source: TelemetrySource; weather?: OpenMeteo; delivered?: Set<string> }
 
 export interface Situation {
   t: Telemetry;
@@ -78,9 +79,10 @@ export async function assess(ctx: SessionContext): Promise<Situation> {
   // Grid: hour 0 is what we can see; later hours come from the learned pattern where
   // there is enough evidence; otherwise the current state persists ~2 h, then unknown (off).
   const probs = gridProbabilityByHour(h.gridEvents, now.getUTCDay());
+  const probsTomorrow = gridProbabilityByHour(h.gridEvents, (now.getUTCDay() + 1) % 7);
   const gridForecast = Array.from({ length: 24 }, (_, i) => {
     if (i === 0 && t.grid_available !== null) return t.grid_available;
-    const p = probs[(now.getUTCHours() + i) % 24];
+    const p = (now.getUTCHours() + i >= 24 ? probsTomorrow : probs)[(now.getUTCHours() + i) % 24]; // hours past midnight belong to tomorrow's weekday
     if (p !== null) return p >= 0.5;
     return i < 2 ? t.grid_available : null;
   });

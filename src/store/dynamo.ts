@@ -98,8 +98,10 @@ export class DynamoStore implements StoreBackend {
     this.table = opts.table ?? process.env.DYNAMO_TABLE ?? "powerline";
     this.region = opts.region ?? process.env.AWS_REGION ?? "us-east-1";
     this.endpoint = opts.endpoint ?? process.env.DYNAMO_ENDPOINT;
-    this.maxAttempts = Math.max(1, opts.maxAttempts ?? Number(process.env.DYNAMO_MAX_ATTEMPTS ?? 6));
-    this.readCacheMs = opts.readCacheMs ?? Number(process.env.DYNAMO_READ_CACHE_MS ?? 3_000);
+    // Garbage in either variable must fall back, not become NaN (a NaN attempt count makes every call throw `undefined`).
+    const envNum = (name: string, dflt: number, min = 0) => { const n = Number(process.env[name]); return process.env[name]?.trim() && Number.isFinite(n) && n >= min ? n : dflt; };
+    this.maxAttempts = Math.max(1, Math.floor(opts.maxAttempts ?? envNum("DYNAMO_MAX_ATTEMPTS", 6, 1)));
+    this.readCacheMs = opts.readCacheMs ?? envNum("DYNAMO_READ_CACHE_MS", 3_000);
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.client = opts.client ?? null;
     this.commands = opts.commands ?? null;
@@ -199,7 +201,7 @@ export class DynamoStore implements StoreBackend {
             TableName: this.table,
             Item: item,
             // First write ever, or nobody has written since we read.
-            ConditionExpression: "attribute_not_exists(pk) OR #v = :expected",
+            ConditionExpression: "attribute_not_exists(pk) OR attribute_not_exists(#v) OR #v = :expected",
             ExpressionAttributeNames: { "#v": "version" },
             ExpressionAttributeValues: { ":expected": expected },
           })),

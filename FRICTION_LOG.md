@@ -1,7 +1,6 @@
 # Friction log
 
 Format per entry: task → steps → expected vs actual → severity (Blocker / Major / Minor) → workaround → suggestion.
-Judges award up to 10% bonus for these. Log as you go; don't reconstruct at the end.
 
 ## 2026-09-08 — SDK package split not reflected in hackathon links
 - **Task:** Install the MCP TypeScript SDK to build a Streamable HTTP server.
@@ -190,3 +189,13 @@ Judges award up to 10% bonus for these. Log as you go; don't reconstruct at the 
 - **Severity:** Major for a weekend builder — an afternoon lost to rewriting a working deploy path; nothing in the product itself.
 - **Workaround:** `.github/workflows/image.yml` publishes `ghcr.io/<owner>/powerline` on every push; `scripts/deploy-ecs-express.sh` creates the roles, the service, and prints the URL. App Runner files removed.
 - **Suggestion:** Put the App Runner notice on the service's documentation landing page and in the AWS Builder Center hackathon resources, and give Express Mode a "from a public GitHub image" example in its getting-started page — that is the shape most hackathon projects have.
+
+## 2026-10-17 — VRM: no documented attribute code for grid voltage, so "grid off" cannot be told from "grid idle"
+- **Task:** Detect a grid outage from Victron VRM data the way the Growatt adapter does (`vac1 > 100 V`).
+- **Steps:** Searched the VRM API documentation and the community archive for the attribute codes accepted by `stats?type=custom&attributeCodes[]=`; found `Pdc`, `bs`, `bp`, `gp`, `ac_loads` and the energy-flow codes (`Gc`, `Gb`, `Pg`…) by example only, and no AC-input-voltage code at all.
+- **Expected:** A documented list of attribute codes with units, including AC input voltage, so an adapter can read "grid present" directly.
+- **Actual:** Grid *power* is the only grid signal available. Zero flow is ambiguous: a grid-tied installation with the sun covering the whole load and no feed-in reads 0 W all afternoon, which the first version of the adapter reported as an outage — logged, announced to every open session, and learned as a daily pattern.
+- **Severity:** Minor (one afternoon's data on the Victron path; the simulator and Growatt are unaffected).
+- **Workaround:** Flow proves the grid is there; zero flow is reported as *unknown*, which the alert monitor, recorder and forecast all treat as "no information". Outages on this adapter come from the household saying so (`log_grid_event`).
+- **Suggestion:** Publish the attribute-code catalogue (code, meaning, unit, which device types supply it) on the VRM API reference, and expose an AC-input voltage or "grid available" code in `stats`.
+

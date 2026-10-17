@@ -70,3 +70,4 @@ console.log(alerts.length ? `ALERTS (${alerts.length}) ->\n` + alerts.map((a) =>
 streamAbort.abort();
 const del = await fetch(URL_, { method: "DELETE", headers: { "mcp-session-id": session! } });
 console.log("DELETE session ->", del.status);
+process.exit(0); // the aborted SSE stream can leave a pending handle; the round-trip itself succeeded

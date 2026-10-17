@@ -119,29 +119,56 @@ export function normalize(h: Household): Household {
  * read as well as every write: a store file edited by hand, a record written by an older
  * version, or a bad item in DynamoDB must never be able to crash a tool call.
  */
+/**
+ * A timestamp the engine can compute on: parseable and within ±200 years of now. JavaScript accepts
+ * years up to ±275760; a sample that far out survives Date.parse but makes toISOString() throw once
+ * the timezone shift is applied, which would take every tool for that household down with it.
+ */
+// ±200 years: far wider than any simulated clock can drift from wall time in a deployment's lifetime, far narrower than the cliff.
+const PLAUSIBLE_SPAN_MS = 200 * 365 * 86_400_000;
+export function plausibleMs(iso: unknown): number | null {
+  if (typeof iso !== "string") return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && Math.abs(ms - Date.now()) <= PLAUSIBLE_SPAN_MS ? ms : null;
+}
+const wattsOk = (w: unknown): w is number => typeof w === "number" && Number.isFinite(w) && w > 0 && w <= 50_000;
+const minutesOk = (m: unknown): m is number => typeof m === "number" && Number.isFinite(m) && m >= 1 && m <= 1_440;
+const SOURCES = new Set(["solar", "grid", "battery"]);
+
 export function sanitize(h: Household): Household {
   // Coerce nullish fields explicitly: DynamoDB rejects `undefined` attributes, and
   // depending on the SDK's removeUndefinedValues to strip them would put a data-integrity
   // guarantee in a client marshalling option. Keep it here, where every backend gets it.
-  h.profile = h.profile ?? null;
-  h.armedPlan = h.armedPlan ?? null;
+  // A hand-edited file or a foreign item can hold anything in these slots; a non-array is treated as empty, never thrown on.
+  const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+  h.profile = (obj(h.profile) as typeof h.profile) ?? null;
+  h.armedPlan = (obj(h.armedPlan) as typeof h.armedPlan) ?? null;
   if (h.armedPlan) {
-    h.armedPlan.items = (h.armedPlan.items ?? []).filter((i) => i && typeof i.name === "string" && !Number.isNaN(Date.parse(i.startAt)));
-    if (h.armedPlan.items.length === 0) h.armedPlan = null;
+    h.armedPlan.items = arr<ArmedItem>(h.armedPlan.items)
+      .filter((i) => i && typeof i.name === "string" && plausibleMs(i.startAt) !== null && wattsOk(i.watts) && minutesOk(i.minutes) && SOURCES.has(i.source))
+      .map((i) => ({ ...i, name: i.name.slice(0, 60), startAt: new Date(plausibleMs(i.startAt) as number).toISOString() }))
+      .slice(0, 200);
+    if (h.armedPlan.items.length === 0 || typeof h.armedPlan.armedAt !== "string") h.armedPlan = null;
   }
-  h.appliances = (h.appliances ?? []).filter((a) => a && typeof a.name === "string" && Number.isFinite(a.watts) && Number.isFinite(a.minutes));
+  // The same bounds the tools enforce: a negative wattage in a hand-edited file would make a plan "run on solar surplus",
+  // and zero minutes makes every run vacuously covered.
+  h.appliances = arr<Appliance>(h.appliances).filter((a) => a && typeof a.name === "string" && wattsOk(a.watts) && minutesOk(a.minutes)).map((a) => ({ ...a, name: a.name.slice(0, 60) }));
+  h.tariff = obj(h.tariff) as typeof h.tariff;
   h.tariff = h.tariff && Number.isFinite(h.tariff.perKwh) && h.tariff.perKwh >= 0 && typeof h.tariff.currency === "string" ? { currency: h.tariff.currency.slice(0, 8), perKwh: h.tariff.perKwh } : null;
   // One sample per hour slot, finite numbers only, newest last.
   const byHour = new Map<string, Sample>();
-  for (const x of h.samples ?? []) {
-    if (!x || typeof x.at !== "string" || Number.isNaN(Date.parse(x.at))) continue;
+  for (const x of arr<Sample>(h.samples)) {
+    const ms = x ? plausibleMs(x.at) : null;
+    if (ms === null) continue;
     if (![x.pv_w, x.load_w, x.soc_pct].every(Number.isFinite)) continue;
-    const key = new Date(x.at).toISOString().slice(0, 13);
+    const key = new Date(ms).toISOString().slice(0, 13);
     byHour.set(key, { at: `${key}:00:00.000Z`, pv_w: Math.round(x.pv_w), load_w: Math.round(x.load_w), soc_pct: Math.round(x.soc_pct * 10) / 10, grid_on: typeof x.grid_on === "boolean" ? x.grid_on : null });
   }
   h.samples = [...byHour.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).slice(-MAX_SAMPLES);
-  h.gridEvents = (h.gridEvents ?? [])
-    .filter((e) => e && typeof e.at === "string" && typeof e.on === "boolean" && !Number.isNaN(Date.parse(e.at)))
+  h.gridEvents = arr<GridEvent>(h.gridEvents)
+    .filter((e) => e && typeof e.on === "boolean" && plausibleMs(e.at) !== null)
+    .map((e) => ({ ...e, at: new Date(plausibleMs(e.at) as number).toISOString() }))
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
     .slice(-MAX_GRID_EVENTS);
   if (h.profile) {

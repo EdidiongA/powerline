@@ -1,12 +1,12 @@
 {
   "name": "powerline",
-  "version": "0.13.4",
+  "version": "0.13.6",
   "private": true,
   "type": "module",
-  "description": "Powerline — Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
+  "description": "Powerline \u2014 Alexa+ home power copilot: stateful Streamable HTTP MCP server with MCP App cards, Growatt + Victron VRM adapters, forecast engine",
   "license": "MIT",
   "scripts": {
-    "build:ui": "cross-env UI_PAGE=card vite build && cross-env UI_PAGE=planner vite build && cross-env UI_PAGE=report vite build && cross-env UI_PAGE=demo vite build",
+    "build:ui": "tsc -p tsconfig.ui.json && cross-env UI_PAGE=card vite build && cross-env UI_PAGE=planner vite build && cross-env UI_PAGE=report vite build && cross-env UI_PAGE=demo vite build",
     "build:server": "tsc -p tsconfig.json",
     "build": "npm run build:ui && npm run build:server",
     "dev": "npm run build:ui && tsx watch src/http.ts",
@@ -16,7 +16,8 @@
     "start:aws": "node --env-file=.env dist/http.js",
     "dynamo:init": "tsx scripts/dynamo-init.ts",
     "seed:history": "tsx src/seed-history.ts",
-    "check:browser": "node scripts/browser-check.mjs"
+    "check:browser": "node scripts/browser-check.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.ui.json"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1128.0",

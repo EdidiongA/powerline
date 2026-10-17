@@ -42,6 +42,12 @@ const plan = {
   selected: ["iron"], localHour: 13, socNow: 81.8, reserve: 20,
 };
 
+test("dashboard clock is exact in half-hour zones", () => {
+  const w = mount("card");
+  w.__onresult({ structuredContent: { ...status, tzOffset: 5.5, telemetry: { ...telemetry, at: "2026-09-15T18:30:00.000Z" } } });
+  assert.equal(w.document.getElementById("ts")?.textContent, "00:00", "18:30Z + 5:30 = 00:00, not 23.5:30");
+});
+
 test("dashboard renders a healthy reading", () => {
   const w = mount("card");
   w.__onresult({ structuredContent: { ...status, hoursToFloor: null, minSocPct: 55 } });

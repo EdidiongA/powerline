@@ -81,3 +81,12 @@ test("weather: a radiation forecast for the household's coordinates replaces the
   delete process.env.WEATHER_LAT; delete process.env.WEATHER_LON;
   setStore(null);
 });
+
+test("a blank TZ_OFFSET line in .env is 'unset', not UTC: the default offset survives", async () => {
+  const { execFileSync } = await import("node:child_process");
+  // Write a string, not a number: console.log(1) is colourised on some terminals (seen on Windows), which breaks the comparison.
+  const read = (tz: string) => execFileSync(process.execPath, ["--import", "tsx", "-e", "import('./src/config.ts').then(m => process.stdout.write(String(m.TZ_OFFSET)))"], { env: { ...process.env, TZ_OFFSET: tz, FORCE_COLOR: "0", NO_COLOR: "1" }, cwd: process.cwd(), encoding: "utf8" }).trim();
+  assert.equal(read(""), "1");
+  assert.equal(read("abc"), "1");
+  assert.equal(read("3"), "3");
+});

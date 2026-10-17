@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canRun, forecast, gridProbabilityByHour } from "../src/forecast.js";
+import { canRun, forecast, gridProbabilityByHour, planDay, type ForecastInput } from "../src/forecast.js";
 import { clearSkyPvW, typicalLoadW } from "../src/telemetry/simulated.js";
 
 const profile = { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 };
@@ -119,4 +119,20 @@ test("dueReminders fires once, on time, and never stale", async () => {
   assert.deepEqual(dueReminders(items, "2026-10-01T09:10:00Z").map((i) => i.name), ["iron"]);
   assert.deepEqual(dueReminders(items, "2026-10-01T08:59:00Z"), []);
   assert.deepEqual(dueReminders(items, "garbage"), []);
+});
+
+
+test("canRun/planDay: when the battery is already heading under the reserve, a run the grid or sun covers is allowed and blamed on nobody", () => {
+  // Evening: 15 % already, reserve 20 %, grid on all night, no sun.
+  const base: ForecastInput = { socPct: 15, profile: { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 },
+    pvForecastW: Array(24).fill(0), loadForecastW: Array(24).fill(400), gridForecast: Array(24).fill(true) };
+  const r = canRun(base, { name: "iron", watts: 1800, minutes: 30 });
+  assert.equal(r.ok, true, r.reason);
+  assert.match(r.reason, /grid or the sun is covering it/);
+  const plan = planDay(base, [{ name: "iron", watts: 1800, minutes: 30 }]);
+  assert.notEqual(plan.items[0].startHour, null, "plan_day places it on the grid");
+  assert.equal(plan.items[0].source, "grid");
+  // Grid off: the same run really does draw on an already-breached battery → still refused.
+  const dark = { ...base, gridForecast: Array(24).fill(false) };
+  assert.equal(canRun(dark, { name: "iron", watts: 1800, minutes: 30 }).ok, false);
 });

@@ -72,15 +72,22 @@ export class VictronSource implements TelemetrySource {
       const gp = lastOf("gp");
       // Stamp the reading with the sample's own time (VRM buckets are up to 15 min old), not ours.
       const sampleTs = rec.bs && rec.bs.length ? rec.bs[rec.bs.length - 1][0] : null;
-      const at = typeof sampleTs === "number" && Number.isFinite(sampleTs) ? new Date(sampleTs * 1000).toISOString() : new Date().toISOString();
+      // VRM v2 stats stamp samples in epoch MILLISECONDS (older docs show seconds); accept either and never a date in year 58759.
+      const sampleMs = typeof sampleTs === "number" && Number.isFinite(sampleTs) ? (sampleTs > 1e11 ? sampleTs : sampleTs * 1000) : NaN;
+      const at = Number.isFinite(sampleMs) && Math.abs(Date.now() - sampleMs) < 7 * 86_400_000 ? new Date(sampleMs).toISOString() : new Date().toISOString();
+      const soc = lastOf("bs");
+      if (soc === null) throw new Error("no state of charge in the VRM payload"); // a reading without SOC is not a reading: serve the last good one as stale
       this.last = {
         at,
         pv_w: Math.round(lastOf("Pdc") ?? 0),
         load_w: Math.round(lastOf("ac_loads") ?? 0),
         battery_w: Math.round(lastOf("bp") ?? 0),
-        soc_pct: Math.round((lastOf("bs") ?? 0) * 10) / 10,
+        soc_pct: Math.round(soc * 10) / 10,
         grid_w: gp === null ? null : Math.round(gp),
-        grid_available: gp === null ? null : Math.abs(gp) > 5,
+        // Power flowing proves the grid is there; zero flow does not prove it is gone (a grid-tied system with the
+        // sun covering the whole load and no feed-in sits at 0 W all afternoon). Report "unknown" rather than a
+        // spurious outage, which would otherwise be logged, announced and learned as a daily pattern.
+        grid_available: gp === null ? null : Math.abs(gp) > 5 ? true : null,
         source: this.name,
         raw: rec,
       };

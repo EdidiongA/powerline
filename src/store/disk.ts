@@ -17,6 +17,7 @@ export class DiskStore implements StoreBackend {
   private readonly dir: string;
   private readonly file: string;
   private cache: Db | null = null;
+  private loading: Promise<Db> | null = null;
   private chain: Promise<unknown> = Promise.resolve();
 
   constructor(dir = process.env.DATA_DIR ?? path.resolve("data")) {
@@ -24,18 +25,32 @@ export class DiskStore implements StoreBackend {
     this.file = path.join(dir, "store.json");
   }
 
-  private async load(): Promise<Db> {
-    if (this.cache) return this.cache;
+  /**
+   * One read, shared by every caller that starts before it resolves. Without the memo, a get()
+   * (which is not serialised) racing the first update() could land second and replace the cache
+   * with a pre-mutation snapshot, so the next update would persist stale data over a committed write.
+   */
+  private load(): Promise<Db> {
+    if (this.cache) return Promise.resolve(this.cache);
+    this.loading ??= this.readDb().then((db) => (this.cache = db)).finally(() => { this.loading = null; });
+    return this.loading;
+  }
+
+  private async readDb(): Promise<Db> {
+    // A prototype-free object: a household id such as "__proto__" (only an operator could configure one)
+    // becomes an ordinary key instead of silently reading and writing Object.prototype.
+    const db: Db = Object.create(null) as Db;
     try {
       const raw = await fs.readFile(this.file, "utf8");
-      const parsed = JSON.parse(raw) as Db;
-      this.cache = parsed && typeof parsed === "object" ? parsed : {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const k of Object.keys(parsed as object)) db[k] = (parsed as Db)[k];
+      }
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code !== "ENOENT") console.error(`[store] ${this.file} unreadable (${e.message}); starting empty`);
-      this.cache = {};
     }
-    return this.cache;
+    return db;
   }
 
   private async persist(db: Db): Promise<void> {
@@ -66,8 +81,10 @@ export class DiskStore implements StoreBackend {
       mutate(next);
       normalize(next);
       next.version = (next.version ?? 0) + 1;     // sanitised above, so a non-numeric version in the file restarts at 1
+      // Persist a copy first: if the write fails (disk full, permissions) the cache must not run ahead of the file.
+      const staged: Db = Object.assign(Object.create(null) as Db, db, { [id]: next });
+      await this.persist(staged);
       db[id] = next;
-      await this.persist(db);
       return clone(next);
     });
   }

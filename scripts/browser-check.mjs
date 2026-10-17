@@ -55,21 +55,42 @@ try {
   dialogs.some((m) => /already armed/.test(m)) ? console.log("✓ elicitation surfaced as a dialog and 'no' was honoured") : fail(`no elicitation dialog (${JSON.stringify(dialogs)})`);
   await ask("How did we do this week?", 3000);
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /run the|Battery|Grid/.test(t.textContent)), null, { timeout: 90000 }).then(() => console.log("✓ a pushed notification landed as a toast")).catch(() => fail("no notification toast within 90 s"));
+  // Theme toggle propagates into the card iframes (host context change over the bridge) without a page error.
+  await page.click("#theme").catch(() => {});
+  await page.waitForTimeout(800);
+  const cardTheme = await (async () => { for (const f of page.frames()) { try { const t = await f.evaluate(() => document.documentElement.dataset.theme ?? ""); if (t) return t; } catch {} } return ""; })();
+  const pageTheme = await page.evaluate(() => document.documentElement.dataset.theme ?? "");
+  pageTheme && cardTheme === pageTheme ? console.log(`✓ theme toggle reached the cards (${pageTheme})`) : fail(`theme toggle: page=${pageTheme} card=${cardTheme}`);
   // Free-form: "give me everything" runs four read-only tools in one turn and renders their cards.
   const before = (await page.$$(".card iframe")).length;
-  await ask("Give me everything", 6000);
+  await ask("Give me everything", 1500);
+  // Four tool calls and three cards in one turn: wait for the cards rather than a fixed pause (CI runners are slow).
+  await page.waitForFunction((n) => document.querySelectorAll(".card iframe").length >= n + 3, before, { timeout: 30000 }).catch(() => {});
   const after4 = (await page.$$(".card iframe")).length;
   after4 - before >= 3 ? console.log(`✓ "give me everything" rendered ${after4 - before} cards in one turn`) : fail(`"give me everything" rendered ${after4 - before} cards`);
-  await ask("Give me a brief of what it looks like by tomorrow morning", 2500);
+  await ask("Give me a brief of what it looks like by tomorrow morning", 1500);
+  await page.waitForFunction(() => { const m = [...document.querySelectorAll(".msg.alexa")].pop(); return m && !/^\s*$/.test(m.textContent ?? "") && !document.querySelector(".thinking"); }, null, { timeout: 30000 }).catch(() => {});
   const lastMsg = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa")].pop()?.textContent ?? "");
   /didn't catch|What would you like/.test(lastMsg) ? fail(`free-form briefing fell through to the menu: ${lastMsg.slice(0, 120)}`) : console.log("✓ a free-form briefing request was understood");
   // A redeploy or a reaped session must not strand the page: restart the server, ask again, expect a fresh answer.
   server.kill("SIGTERM"); await new Promise((r) => server.on("exit", r));
   server = await boot();
-  await ask("How's the power?", 4000);
+  await ask("How's the power?", 1500);
+  await page.waitForFunction(() => !document.querySelector(".thinking"), null, { timeout: 30000 }).catch(() => {});
   const after = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa, .alexa, .bubble")].map((n) => n.textContent).join("\n"));
   const connTxt = await page.evaluate(() => document.getElementById("conn")?.textContent ?? "");
   /^connected/.test(connTxt) && !/failed|Something went wrong/.test(after.slice(-400)) ? console.log("✓ reconnected after a server restart and answered again") : fail(`did not recover after restart (pill: ${connTxt}; tail: ${after.slice(-200)})`);
+  // A card that was on screen BEFORE the restart must still work: its calls go through the host's reconnect-aware path.
+  if (planner) {
+    await planner.click("input[data-name='pump']").catch(() => {});
+    await planner.waitForFunction(() => /Updated|Nothing selected|Could not/.test(document.getElementById("status")?.textContent ?? ""), null, { timeout: 20000 }).catch(() => {});
+    const st = await planner.evaluate(() => document.getElementById("status")?.textContent ?? "").catch(() => "frame gone");
+    /Updated|Nothing selected/.test(st) ? console.log("✓ a card rendered before the restart still re-plans afterwards") : fail(`a pre-restart card is dead after the restart: ${st}`);
+  }
+  // Phone width: no horizontal page scroll, controls reachable.
+  await page.setViewportSize({ width: 360, height: 740 }); await page.waitForTimeout(300);
+  const over = await page.evaluate(() => ({ body: document.body.scrollWidth, header: document.querySelector("header").scrollWidth, main: document.querySelector("main").scrollWidth }));
+  over.body <= 360 && over.header <= 360 && over.main <= 360 ? console.log("✓ no horizontal overflow at 360 px") : fail(`horizontal overflow at 360 px: ${JSON.stringify(over)}`);
   errors.length === 0 ? console.log("✓ no page errors") : fail(`page errors: ${errors.join(" | ")}`);
 } finally {
   await browser.close();

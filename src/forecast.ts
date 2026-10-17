@@ -99,9 +99,13 @@ export function canRun(base: ForecastInput, appliance: Appliance, horizonHours =
   const overInverter = appliance.watts + (base.loadForecastW[0] ?? 0) > base.profile.inverterKw * 1000;
   const runHours = Math.ceil(appliance.minutes / 60);
   const socAfter = withNow.points[Math.max(0, runHours - 1)]?.socPct ?? withNow.points[0].socPct;
+  // When the battery is already heading under the reserve regardless, a run that costs the battery
+  // nothing (the grid or the sun carries it) is fine: it is the baseline, not the appliance.
+  const baselineBreaches = !(without.minSocPct > floor);
+  const coveredNow = baselineBreaches && withNow.minSocPct >= without.minSocPct && withNow.points.slice(0, runHours).every((p) => p.batteryW >= 0);
 
   let bestStart: number | null = null;
-  if (!(withNow.minSocPct > floor) || overInverter) {
+  if (!(withNow.minSocPct > floor || coveredNow) || overInverter) {
     for (let h = 1; h <= horizonHours - runHours; h++) {
       const trial = forecast({ ...base, extraLoads: [...(base.extraLoads ?? []), { startHour: h, watts: appliance.watts, minutes: appliance.minutes }] }, horizonHours);
       const fitsInverter = appliance.watts + (base.loadForecastW[h] ?? 0) <= base.profile.inverterKw * 1000;
@@ -117,10 +121,14 @@ export function canRun(base: ForecastInput, appliance: Appliance, horizonHours =
     return { ok: false, socAfterPct: socAfter, minSocWithPct: withNow.minSocPct, minSocWithoutPct: without.minSocPct, bestStartHour: bestStart,
       reason: `${appliance.name} (${appliance.watts} W) plus current load would exceed the ${base.profile.inverterKw} kW inverter.` };
   }
-  const ok = withNow.minSocPct > floor;
-  const reason = ok
+  const ok = withNow.minSocPct > floor || coveredNow;
+  const reason = coveredNow
+    ? `The grid or the sun is covering it, so it costs the battery nothing — the battery heads to ${without.minSocPct}% tonight regardless (reserve ${floor}%).`
+    : ok
     ? `Battery stays above the ${floor}% reserve (lowest ${withNow.minSocPct}% in the next ${horizonHours}h).`
-    : `Running now would drop the battery to ${withNow.minSocPct}% (reserve is ${floor}%).`;
+    : withNow.minSocPct < without.minSocPct
+    ? `Running now would drop the battery to ${withNow.minSocPct}% (reserve is ${floor}%).`
+    : `The battery is already heading to ${without.minSocPct}% (reserve ${floor}%) and this run would draw on it.`;
   return { ok, socAfterPct: socAfter, minSocWithPct: withNow.minSocPct, minSocWithoutPct: without.minSocPct, bestStartHour: bestStart, reason };
 }
 
@@ -199,7 +207,8 @@ export function planDay(base: ForecastInput, appliances: Appliance[], horizonHou
         const onGrid = !onSurplus && run.every((p) => p.gridOn);        // grid covers the shortfall
         // Keep the floor intact; if the household is already going to breach it tonight,
         // still allow appliances that run entirely on PV surplus (they cost the battery nothing).
-        const ok = trial.minSocPct > floor || (baselineBreaches && onSurplus);
+        const costsBatteryNothing = run.every((p) => p.batteryW >= 0);
+        const ok = trial.minSocPct > floor || (baselineBreaches && costsBatteryNothing);
         if (ok && (!wantSurplus || onSurplus)) { placed = { h, onSurplus, source: onSurplus ? "solar" : onGrid ? "grid" : "battery" }; break; }
       }
       if (placed) break;
@@ -211,7 +220,8 @@ export function planDay(base: ForecastInput, appliances: Appliance[], horizonHou
     } else {
       items.push({ name: a.name, watts: a.watts, minutes: a.minutes, startHour: null, onSurplus: false, source: "none",
         reason: !fitsSomewhere ? `${a.watts} W plus the household load exceeds the ${base.profile.inverterKw} kW inverter`
-          : baselineBreaches ? "no solar-surplus slot today" : `no slot keeps the battery above ${floor}% today` });
+          : runHours > horizonHours ? "longer than the planning horizon"
+          : baselineBreaches ? "no slot today where the sun or the grid covers it" : `no slot keeps the battery above ${floor}% today` });
     }
   }
   const f = forecast({ ...base, extraLoads: extra }, horizonHours);
