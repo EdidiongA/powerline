@@ -17,6 +17,7 @@ export interface SimOptions {
   clockStart?: Date;
   speed?: number; // simulated seconds per real second
   cutoffSocPct?: number; // the inverter's low-battery disconnect; below it the loads drop, the battery does not go to zero
+  steady?: boolean; // no reading-to-reading wobble in load and cloud: the same hour always reads the same (for filming and docs)
 }
 
 export function clearSkyPvW(hourOfDay: number, arrayKw: number): number {
@@ -64,9 +65,9 @@ export class SimulatedSource implements TelemetrySource {
     const now = this.simNow();
     const d = new Date(now);
     const hour = ((d.getUTCHours() + d.getUTCMinutes() / 60 + TZ_OFFSET) % 24 + 24) % 24; // local hour, follows TZ_OFFSET
-    const cloud = 0.85 + 0.15 * this.rnd();
+    const cloud = this.opts.steady ? 0.925 : 0.85 + 0.15 * this.rnd();
     const pv = Math.round(clearSkyPvW(hour % 24, this.opts.arrayKw) * cloud);
-    const load = Math.round(typicalLoadW(hour % 24) * (0.9 + 0.2 * this.rnd()));
+    const load = Math.round(typicalLoadW(hour % 24) * (this.opts.steady ? 1 : 0.9 + 0.2 * this.rnd()));
     const grid = this.gridOn(hour % 24);
 
     // Grid covers load when present; battery absorbs the rest.

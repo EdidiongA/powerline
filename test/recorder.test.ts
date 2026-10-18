@@ -62,3 +62,12 @@ test("simulator: the battery stops at the inverter cut-off, never 0 %", async ()
   let m2 = 100; for (let i = 0; i < 100; i++) { await new Promise((r) => setTimeout(r, 5)); m2 = Math.min(m2, (await strict.current()).soc_pct); }
   assert.ok(m2 >= 20);
 });
+
+test("simulator: SIM_STEADY gives the same reading every time for a frozen clock (filming), the default wobbles", async () => {
+  const mk = (steady: boolean) => new SimulatedSource({ arrayKw: 4.5, batteryKwh: 10, startSoc: 64, clockStart: new Date("2026-10-01T19:00:00Z"), speed: 1e-9, steady });
+  const steady = mk(true), wobbly = mk(false);
+  const s = await Promise.all([1, 2, 3, 4, 5].map(() => steady.current()));
+  assert.equal(new Set(s.map((r) => r.load_w)).size, 1, "steady: one load value");
+  const w: number[] = []; for (let i = 0; i < 5; i++) w.push((await wobbly.current()).load_w);
+  assert.ok(new Set(w).size > 1, "default: readings vary");
+});
