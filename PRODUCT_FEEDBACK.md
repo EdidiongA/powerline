@@ -301,7 +301,8 @@ HTTP-with-headers case, which is what any hosted MCP server needs, deserves the 
 
 **Used for:** packaging the same agent as an AgentCore Runtime app (`agent/agentcore_app.py`,
 `BedrockAgentCoreApp` with an `@app.entrypoint`), tested locally against its `/ping` and `/invocations`
-contract. Not deployed for the hackathon (see below).
+contract, then **deployed to AgentCore Runtime** in us-east-1 (direct code deploy) and invoked there: the
+deployed agent connected to the live Powerline over MCP, planned the household's day and armed it.
 
 **What worked well.** Wrapping an existing agent took a dozen lines, and the app is a plain ASGI app, so
 the runtime contract can be tested with an ordinary test client.
@@ -309,14 +310,20 @@ the runtime contract can be tested with an ordinary test client.
 **What needs work.** The deployment path moved under my feet: the Python starter toolkit
 (`bedrock-agentcore-starter-toolkit`, `agentcore configure/launch`) now prints that it is no longer
 supported and points to a new npm CLI (`@aws/agentcore`) whose deploy is a CDK project
-(`create` → `add` → `deploy`). Two days before a deadline that is a different shape of work (CDK bootstrap,
-a project layout) than the "configure and launch" the existing tutorials describe, so I stopped at a tested,
-deployable app rather than ship an unverified deployment.
+(`create` → `add` → `deploy`), a different shape of work (CDK bootstrap, a project layout) than the
+"configure and launch" the tutorials describe. The old toolkit still works with the recommendation suppressed
+(`AGENTCORE_SUPPRESS_RECOMMENDATION=1`, `-dt direct_code_deploy`), and that is how I deployed: it created the
+execution role and the S3 bucket, cross-compiled the dependencies for ARM64 with `uv`, and the first invoke
+worked. Two rough edges on the way: `uv` must be installed or the build fails, and it only finds
+`requirements.txt` in the folder it is run from. The deploy also printed an X-Ray "trace segment destination"
+ValidationException while enabling observability. It was harmless (the agent deployed and ran), but a
+first-time user cannot tell that from the message.
 
 **Onboarding:** quick for the SDK; the CLI change is the friction (logged).
 
-**Build with it again?** **Yes**, once the new CLI's "deploy an existing Strands agent" path is documented
-end to end.
+**Build with it again?** **Yes.** From a working Strands agent to an invoked AgentCore deployment took
+three commands once the environment was right; the new CLI's "deploy an existing Strands agent" path needs
+the same one-page guide.
 
 ---
 
@@ -359,4 +366,4 @@ records. Both are exercised at runtime (`npm run start:aws` with `STORE=dynamodb
 sections. The judges' live instance runs on **Amazon ECS Express Mode** (section 9) with a task role for
 Bedrock; App Runner, the first plan, closed to new customers in April 2026 — see the friction log. An autonomous evening agent built with the **Strands Agents SDK** on **Amazon Bedrock** (section 11)
 uses Powerline's MCP tools to plan and arm the household's day; it is packaged as an **Amazon Bedrock AgentCore
-Runtime** app (section 12), tested locally, not deployed.
+Runtime** app (section 12), deployed to AgentCore Runtime and invoked there against the live server.

@@ -3,6 +3,7 @@
 All work below happened inside the hackathon submission window (31 Aug – 23 Oct 2026). Work began on 8 September 2026 and the public repository on 9 September; the visible git history starts at the v0.6.1 baseline commit of 26 September, with every earlier version listed below. Nothing pre-dates the hackathon.
 
 ## 0.14.0 — 19 Oct 2026
+- **The evening agent is deployed on Amazon Bedrock AgentCore Runtime** (us-east-1, direct code deploy). It was invoked there against the live Powerline: it read the battery and outlook, planned the day and armed it. The architecture diagram now shows the agent, the prepaid-units path and vending.
 - **Prepaid units: Powerline can now buy electricity, after the household says yes.** Three tools. `set_meter` verifies a prepaid meter with the vendor before saving it. `prepaid_units` estimates the balance (the last meter reading minus the grid energy Powerline recorded since), says when the units run out while the grid is carrying the house, and re-runs the battery forecast without the grid from that hour. `buy_units` buys a top-up and returns the 20-digit token, also pushed as an alert. The evening briefing mentions the units when they will run out. Vendors sit behind one interface (`src/vending.ts`): a simulated vendor by default (no network, no money, and every reply says so), or VTpass's bill-payment API, sandbox only unless `VTPASS_ALLOW_LIVE=1`.
 - **Money safety, all tested:**
   - nothing is bought without an explicit yes, through MCP elicitation, or through a 5-minute quote on hosts without it;

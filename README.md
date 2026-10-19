@@ -33,7 +33,7 @@ anyone can try it in a browser.
 | **Host** | `/demo`: full MCP Apps host (SDK `AppBridge`), pushed alerts as toasts, elicitation dialog, voice in/out, Bedrock or offline rule router |
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh), the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
-| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS), and an autonomous evening agent on **Strands Agents + Bedrock** that drives Powerline over MCP ([`agent/`](agent/)) |
+| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS), and an autonomous evening agent on **Strands Agents + Bedrock** that drives Powerline over MCP, **deployed on Amazon Bedrock AgentCore Runtime** ([`agent/`](agent/)) |
 | **Proven** | 165 tests (plus 7 for the agent): unit, property (1,500 random households), fuzz (425 hostile calls), real-process transport, end-to-end with the official client, plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
 | **For agents** | Agent Skill (`skills/`), prompts, household resource, 30-entry friction log, docs PR upstream |
 
@@ -48,7 +48,7 @@ token). A built-in simulator runs without any hardware.
 | MCP Apps (cards), prompts, server-initiated notifications | [`src/tools/status.ts`](src/tools/status.ts), [`planning.ts`](src/tools/planning.ts) and [`report.ts`](src/tools/report.ts): `registerAppTool` / `registerAppResource` (`@modelcontextprotocol/ext-apps`); [`src/tools/prompts.ts`](src/tools/prompts.ts); [`src/alerts.ts`](src/alerts.ts) + [`src/push.ts`](src/push.ts): `sendResourceUpdated` on the subscribed `powerline://alerts` resource, `sendLoggingMessage` as the fallback |
 | Purchasing (confirmed, capped) | [`src/tools/units.ts`](src/tools/units.ts): `buy_units` asks via `elicitation/create` before spending; [`src/vending.ts`](src/vending.ts): VTpass `merchant-verify` / `pay` / `requery` |
 | Agent Skill | [`skills/powerline-home-power/SKILL.md`](skills/powerline-home-power/SKILL.md) |
-| **AWS Builder**: Amazon Bedrock, Amazon DynamoDB, Strands Agents | [`src/bedrock.ts`](src/bedrock.ts): `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts): conditional `PutItem` on `version`; [`agent/powerline_agent.py`](agent/powerline_agent.py): Strands `Agent` + `BedrockModel` + `MCPClient` (AgentCore Runtime app in [`agent/agentcore_app.py`](agent/agentcore_app.py)) |
+| **AWS Builder**: Amazon Bedrock, Amazon DynamoDB, Strands Agents, Bedrock AgentCore | [`src/bedrock.ts`](src/bedrock.ts): `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts): conditional `PutItem` on `version`; [`agent/powerline_agent.py`](agent/powerline_agent.py): Strands `Agent` + `BedrockModel` + `MCPClient` (deployed on AgentCore Runtime via [`agent/agentcore_app.py`](agent/agentcore_app.py): `BedrockAgentCoreApp`) |
 | **Open Source**: MIT, created in the window | [`LICENSE`](LICENSE), [`CHANGELOG.md`](CHANGELOG.md); upstream docs PR to the MCP TypeScript SDK |
 
 ## Evaluate it in five minutes
@@ -188,13 +188,13 @@ notification is current in protocol 2025-11-25 and maps onto the `resource_updat
 Hosts that don't subscribe still get each alert once as a `notifications/message` (logger `powerline.alerts`,
 `data: { kind, text, … }`), so MCPJam and older hosts keep working. The simulated host subscribes.
 
-## An agent that plans the day on its own (Strands + Amazon Bedrock)
+## An agent that plans the day on its own (Strands + Amazon Bedrock + AgentCore)
 
 [`agent/`](agent/) holds an autonomous **evening agent** built with the Strands Agents SDK on Amazon Bedrock.
 It connects to Powerline as an MCP client (Streamable HTTP, bearer token), checks the battery and the outage
 outlook, plans tomorrow, **arms the plan** so Powerline reminds the household at each start time, and returns
 one paragraph. Run it nightly and the morning is planned before anyone speaks to Alexa+. The same agent is
-packaged as an Amazon Bedrock AgentCore Runtime app (`agent/agentcore_app.py`). A test starts a real Powerline
+**deployed on Amazon Bedrock AgentCore Runtime** (`agent/agentcore_app.py`), where it plans and arms the live household's day. A test starts a real Powerline
 and drives the agent with a scripted model, so CI proves the MCP wiring without AWS. The agent reads `prepaid_units`
 and mentions a suggested top-up, but it is never handed `buy_units`: an unattended agent does not spend money. See [`agent/README.md`](agent/README.md).
 
@@ -224,7 +224,7 @@ Alexa+ / MCP client ──Streamable HTTP (sessions, SSE, CORS)──▶ src/htt
 
 agent/ (Python) ── MCP client over Streamable HTTP ──▶ the same /mcp, with a household token
    ├─ powerline_agent.py   Strands Agents SDK + BedrockModel (Claude on Amazon Bedrock): status, outlook, plan, arm, units
-   └─ agentcore_app.py     the same agent as an Amazon Bedrock AgentCore Runtime app (/ping, /invocations)
+   └─ agentcore_app.py     the same agent on Amazon Bedrock AgentCore Runtime (deployed; /ping, /invocations)
 ```
 
 **Forecast engine** (`src/forecast.ts`, pure functions, property-tested over thousands of random households): `net = pv + grid − load`, SOC integrated at

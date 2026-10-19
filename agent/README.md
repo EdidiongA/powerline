@@ -9,7 +9,7 @@ and the morning reminders are already set.
 - `powerline_agent.py` — the agent: [Strands Agents](https://strandsagents.com) `Agent` + `BedrockModel`
   (Claude Haiku 4.5 by default) + `MCPClient` over Streamable HTTP. Powerline's tools become the agent's tools — all but `buy_units`, which an unattended agent is never given.
 - `agentcore_app.py` — the same agent as an **Amazon Bedrock AgentCore Runtime** app (`BedrockAgentCoreApp`,
-  `/ping` + `/invocations`). Tested locally against that HTTP contract; not deployed for the hackathon.
+  `/ping` + `/invocations`). **Deployed to AgentCore Runtime** (us-east-1, direct code deploy, 19 Oct 2026) and invoked there against the live Powerline: it planned and armed the household's day. Also tested locally against the same HTTP contract in CI.
 - `test_agent.py` — starts a real Powerline process and runs the agent with a scripted stand-in model
   (no AWS needed): the agent's tool calls go over MCP and the plan ends up armed on the server. Runs in CI.
 
