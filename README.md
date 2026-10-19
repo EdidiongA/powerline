@@ -16,7 +16,7 @@ data, answers with **interactive MCP App cards**, plans the day around the sun, 
 it is time, **learns the household's own pattern**, and ships with its **own simulated Alexa+ host** so
 anyone can try it in a browser.
 
-![Powerline's simulated Alexa+ host: status card, "not now — best time 09:00", planner re-planning from a tick, arming, weekly report](docs/host.gif)
+![Powerline's simulated Alexa+ host on the live deployment, with Amazon Bedrock answering: status card, "can I run the iron?", the planner re-planning from a tick, and the weekly report](docs/host.gif)
 
 ### At a glance
 
@@ -28,7 +28,7 @@ anyone can try it in a browser.
 | **Remembers** | profile, appliances, tariff, armed plan, 14 days of hourly history per household — DynamoDB (conditional writes) or disk |
 | **Learns** | after 3 days the forecast uses *this* home's hour-by-hour load shape and real solar yield; the report says so |
 | **Reports** | solar made, house used, grid hours and cost, worst battery point — today / yesterday / week |
-| **Real data** | Victron VRM (live against a real installation), Growatt OpenAPI (replay-tested), simulator |
+| **Real data** | Victron VRM (read live from Victron's public demo installation), Growatt OpenAPI (replay-tested), simulator |
 | **Host** | `/demo`: full MCP Apps host (SDK `AppBridge`), pushed alerts as toasts, elicitation dialog, voice in/out, Bedrock or offline rule router |
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
@@ -64,7 +64,7 @@ reminders arriving as they are pushed, voice in and out). It runs on Amazon Bedr
 is set and on a deterministic phrase router otherwise, and says which in its header. It is a stand-in for
 the device, and says that too.
 
-![Simulated Alexa+ host](docs/demo-host.png)
+![Simulated Alexa+ host on the live deployment, Bedrock phrasing the replies](docs/demo-host.png)
 
 Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp` — [MCPJam Inspector](https://www.mcpjam.com)
 (`npx @mcpjam/inspector@latest`, **Add server → HTTP**) — and say:
@@ -295,7 +295,7 @@ Judges and users deserve the line drawn clearly.
 | Real | Simulated / not claimed |
 | --- | --- |
 | The MCP server, transport, sessions, auth, cards, prompts, skill, alerts and reminders — all run as shown, through any MCP Apps host. | **The host.** `/demo` is Powerline's own simulated Alexa+ host (a genuine MCP Apps host, but not Alexa), and MCPJam Inspector is the other host used in the demo; no claim is made of a completed connection inside the production Alexa+ app. The simulated host's language model is Amazon Bedrock when configured, otherwise a phrase router — the header says which. |
-| **Victron VRM** telemetry — read live from Victron's public demo installation (a real site) and from any site with a personal access token. | **Growatt** — replay-tested against recorded payloads from both device families; not yet run against a live unit. |
+| **Victron VRM** telemetry — read live from Victron's public demo installation, and from any site with a personal access token. | **Growatt** — replay-tested against recorded payloads from both device families; not yet run against a live unit. |
 | **Amazon Bedrock** phrases the briefing; **Amazon DynamoDB** stores households — both exercised at runtime with the project's own account. | **The default telemetry** is a simulator (clear-sky Lagos curve, scripted outage bands) so the project runs with no hardware and no account. |
 | The forecast engine — pure arithmetic on the household's own numbers, property-tested. **Weather** — Open-Meteo's radiation forecast for the household's coordinates, when `WEATHER_LAT/LON` are set. | Without coordinates (and on a simulated clock) the solar curve is the clear-sky model; a provider forecast (VRM exposes one) is used only when it is a full, finite series. The card footer always says which source is in play. |
 
