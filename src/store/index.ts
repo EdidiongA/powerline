@@ -9,7 +9,7 @@ import { DiskStore } from "./disk.js";
 import { DynamoStore } from "./dynamo.js";
 import type { Household, StoreBackend, StoreHealth } from "./types.js";
 
-export type { Household, StoreBackend, StoreHealth, ArmedPlan, ArmedItem } from "./types.js";
+export type { Household, StoreBackend, StoreHealth, ArmedPlan, ArmedItem, Meter, Purchase } from "./types.js";
 export { StoreConflictError, StoreConfigError } from "./types.js";
 export { DiskStore } from "./disk.js";
 export { DynamoStore } from "./dynamo.js";

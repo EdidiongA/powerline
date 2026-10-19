@@ -82,3 +82,49 @@ test("router: precedence and hostile input — events before appliances, reports
   assert.deepEqual(r("can I run the washing machine right now").input, { appliance: "washing machine" });
   const t0 = Date.now(); r("can " + "run ".repeat(14_900) + "5"); assert.ok(Date.now() - t0 < 200, "a pathological utterance must not stall the event loop");
 });
+
+test("router: prepaid meter, balance, outlook and purchases", () => {
+  const U = [...ALL, "set_meter", "prepaid_units", "buy_units"];
+  const u = (s: string) => routeByRules(s, U);
+  assert.deepEqual(u("My meter is 1111 1111 1111 1, Ikeja Electric"), { tool: "set_meter", input: { meterNumber: "1111111111111", disco: "ikeja electric" }, text: "" });
+  assert.deepEqual(u("my meter number is 1111111111111 ikedc and it shows 40 units").input, { meterNumber: "1111111111111", disco: "ikedc", unitsLeft: 40 });
+  assert.deepEqual(u("the meter shows 12.5 units").input, { unitsLeft: 12.5 });
+  for (const q of ["How are my units?", "will my units last till morning", "do I need to buy units", "how many units do I have left"]) assert.equal(u(q).tool, "prepaid_units", q);
+  assert.deepEqual(u("Buy 5,000 naira of units").input, { amount: 5000 });
+  assert.deepEqual(u("buy ₦3000 units").input, { amount: 3000 });
+  assert.deepEqual(u("recharge 5k").input, { amount: 5000 });
+  assert.deepEqual(u("top up my meter"), { tool: "buy_units", input: {}, text: "" });
+  assert.equal(u("buy light").tool, "buy_units");
+  // The tariff and appliance rules still win where they should.
+  assert.equal(u("grid costs 225 naira a unit").tool, "set_tariff");
+  assert.equal(u("add the kettle").tool, "add_appliance");
+  // Not purchases, not balance questions (each was mis-routed once).
+  assert.equal(u("each unit costs 225 naira").tool, "set_tariff");
+  assert.equal(u("how many units did we use yesterday").tool, "energy_report");
+  assert.equal(u("can I run the iron for 30 minutes on units").tool, "can_i_run");
+  assert.notEqual(u("buy a 10k battery").tool, "buy_units");
+  assert.notEqual(u("recharge the battery from grid electricity").tool, "buy_units");
+  assert.equal(u("buy 20 units").tool, null, "units are kWh; buy_units takes naira, so ask");
+  assert.match(u("buy 20 units").text, /naira/);
+  assert.equal(u("is my meter ok").tool, "prepaid_units");
+  assert.notEqual(u("should I buy a bigger battery").tool, "prepaid_units");
+  assert.notEqual(u("how many units will the iron use").tool, "prepaid_units");
+  // Plain numbers in a purchase are naira; "add … to my meter" is a purchase; "units finished" is a balance of zero.
+  assert.deepEqual(u("top up my meter with 5000").input, { amount: 5000 });
+  assert.deepEqual(u("recharge my meter 2000").input, { amount: 2000 });
+  assert.deepEqual(u("buy units worth 3000").input, { amount: 3000 });
+  assert.deepEqual(u("buy 5000").input, { amount: 5000 });
+  assert.deepEqual(u("add 5000 naira to my meter"), { tool: "buy_units", input: { amount: 5000 }, text: "" });
+  assert.deepEqual(u("no light, units finished"), { tool: "set_meter", input: { unitsLeft: 0 }, text: "" });
+  assert.equal(u("when will my units run out").tool, "prepaid_units");
+  // "Light is out" is a grid outage in Lagos, never an empty meter; spaced meter numbers, airtime and phones are not naira.
+  for (const q of ["light is out", "street light is out", "light off, battery empty", "my light finished"]) assert.notEqual(u(q).tool, "set_meter", q);
+  assert.equal(u("nepa took light, units finished").tool, "log_grid_event");
+  assert.deepEqual(u("top up meter 1111 1111 1111 1 with 5000").input, { amount: 5000 });
+  assert.deepEqual(u("buy units for meter 1111 1111 1111 1").input, {});
+  for (const q of ["buy 2 kettles", "buy 1000 airtime", "recharge 08031234567 with 1000"]) assert.notEqual(u(q).tool, "buy_units", q);
+  // Thousands separators survive cleaning.
+  assert.deepEqual(r("remember the iron uses 2,000 watts for 30 minutes").input, { name: "iron", watts: 2000, minutes: 30 });
+  // On a server without the units tools, the host says so instead of guessing.
+  assert.equal(r("buy 5000 naira of units").tool, null);
+});

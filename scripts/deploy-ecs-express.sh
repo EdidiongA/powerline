@@ -59,7 +59,7 @@ e = {"HOST": "0.0.0.0", "NODE_ENV": "production", "DATA_DIR": "/tmp/powerline-da
      "SIM_START_SOC": "55", "SIM_CLOCK_START": "2026-10-01T20:00:00Z", "TZ_OFFSET": "1", "SEED_HISTORY_DAYS": "7"}
 if os.environ.get("API_TOKEN_SECRET"): e["API_TOKENS"] = "judge:" + os.environ["API_TOKEN_SECRET"]
 if os.environ.get("REGION"): e["AWS_REGION"] = os.environ["REGION"]
-for k in ["STORE", "DYNAMO_TABLE", "BEDROCK_MODEL_ID", "ALLOWED_ORIGINS", "POWER_SOURCE", "VRM_DEMO", "VRM_SITE_ID", "WEATHER_LAT", "WEATHER_LON", "PUBLIC_URL"]:
+for k in ["STORE", "DYNAMO_TABLE", "BEDROCK_MODEL_ID", "ALLOWED_ORIGINS", "POWER_SOURCE", "VRM_DEMO", "VRM_SITE_ID", "WEATHER_LAT", "WEATHER_LON", "PUBLIC_URL", "UNITS_VENDOR", "VTPASS_API_KEY", "VTPASS_SECRET_KEY", "UNITS_MAX_NGN", "UNITS_DAILY_NGN", "SIM_START_SOC", "SIM_CLOCK_START", "SIM_SPEED", "SIM_STEADY"]:
     if os.environ.get(k): e[k] = os.environ[k]
 print(json.dumps({"image": sys.argv[1], "containerPort": 3000, "environment": [{"name": k, "value": v} for k, v in e.items()]}))
 PY

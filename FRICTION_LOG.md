@@ -161,6 +161,7 @@ Format per entry: task → steps → expected vs actual → severity (Blocker / 
 - **Actual:** The SDK docs now mark MCP logging **deprecated as of protocol 2026-07-28 (SEP-2577)**, functional for at least twelve months. On a 2025-11-25 session — the hackathon's stated minimum — there is no other channel for a notification the client did not request; the 2026-07-28 replacement (`subscriptions/listen`) does not exist on the older era.
 - **Severity:** Minor today (it works, and will through the window), Major for anyone designing a server-push feature this quarter without reading the deprecation note.
 - **Workaround:** Keep logging notifications on 2025-era sessions; the alert payload is already a structured `{kind, text, …}` object, so moving it to a subscription stream later is a transport change, not a feature change. Documented in README.
+- **Update 2026-10-19:** the "no other channel" above was wrong, and the fix was already in the SDK. Resource subscriptions (`resources/subscribe` → `notifications/resources/updated`) are current in 2025-11-25, and `resources/updated` maps onto the `resource_updated` event 2026-07-28 carries over `subscriptions/listen`. Powerline now appends every alert to a `powerline://alerts` resource and notifies subscribed hosts that way; logging is only the fallback for hosts that don't subscribe. Found by reading `sendResourceUpdated` in the type definitions: it is not marked deprecated, and the `subscriptions/listen` event bus lists `resource_updated` as one of its four events. Nothing in the deprecation notice points there, which is the real friction.
 - **Suggestion:** The Streamable HTTP docs should name the recommended channel for unsolicited server alerts on each protocol era, and the hackathon rules should say whether 2026-07-28 servers are accepted.
 
 ## 2026-10-08 — Elicitation: three surprises in one hour
@@ -198,4 +199,31 @@ Format per entry: task → steps → expected vs actual → severity (Blocker / 
 - **Severity:** Minor (one afternoon's data on the Victron path; the simulator and Growatt are unaffected).
 - **Workaround:** Flow proves the grid is there; zero flow is reported as *unknown*, which the alert monitor, recorder and forecast all treat as "no information". Outages on this adapter come from the household saying so (`log_grid_event`).
 - **Suggestion:** Publish the attribute-code catalogue (code, meaning, unit, which device types supply it) on the VRM API reference, and expose an AC-input voltage or "grid available" code in `stats`.
+
+## 2026-10-19 — Alexa+ purchasing: named as "creative", with no guidance on confirmation
+- **Task:** Let the household buy prepaid electricity units through Powerline, since the judging criteria list purchasing capabilities among the creative Alexa+ directions.
+- **Steps:** Looked through the Alexa+ track resources, the MCP specification and the hackathon pages for how an Alexa+ integration should confirm a purchase with the customer.
+- **Expected:** A recommended pattern: MCP elicitation, an Alexa-side confirmation step, Amazon Pay, or a statement that tools which spend money must use one of them.
+- **Actual:** Nothing. Elicitation is the only confirmation mechanism in MCP itself, and whether Alexa+ renders it is not documented.
+- **Severity:** Moderate (a design decision with money attached, taken without guidance).
+- **Workaround:** `buy_units` confirms through elicitation when the host offers it and otherwise returns a quote that has to be confirmed in a second call within five minutes. A failed or timed-out question buys nothing. Spending is capped per purchase and per 24 hours, the tool carries `destructiveHint` and `openWorldHint`, and the autonomous agent is never given it.
+- **Suggestion:** Document how Alexa+ treats `destructiveHint` / `openWorldHint` tools and whether it renders `elicitation/create`, and publish a recommended confirmation pattern for MCP tools that spend money.
+
+## 2026-10-19 — VTpass: the rules that decide correctness are on separate pages
+- **Task:** Implement meter verification, purchase and requery against VTpass's sandbox.
+- **Steps:** Followed the per-distribution-company pages (Ikeja, PHED, Kaduna) for endpoints and sample responses.
+- **Expected:** The request-id format and the response codes on the same page as the endpoint.
+- **Actual:** The request id must start with `YYYYMMDDHHII` in Africa/Lagos time, which is on a separate "How to generate Request ID" page. Response codes are on another page that the samples do not link to. The token and units fields are named differently on different distribution-company pages.
+- **Severity:** Minor (caught while reading, before any request was sent).
+- **Workaround:** Request ids are generated in Lagos time. Anything other than "delivered" is treated as pending (re-queried with the same id, never bought again) or failed. The token is read from whichever field is present. Replay tests cover each response shape.
+- **Suggestion:** Put the request-id rule and a link to the response codes in each endpoint page's request table, and use the same field names for the token and units on every distribution company.
+
+## 2026-10-19 — AgentCore: the deploy CLI changed under the tutorials
+- **Task:** Deploy the Strands evening agent to Amazon Bedrock AgentCore Runtime.
+- **Steps:** Wrapped the agent in `BedrockAgentCoreApp` (worked, tested locally); installed `bedrock-agentcore-starter-toolkit` to run `agentcore configure` / `agentcore launch` as the tutorials describe.
+- **Expected:** Configure and launch an existing agent file in two commands.
+- **Actual:** The starter toolkit now prints "no longer supported" and points to a new npm CLI, `@aws/agentcore` (0.31), whose `deploy` is a CDK project (`create` → `add` → `deploy`) rather than "point it at a file". The tutorials and the toolkit disagree about the path.
+- **Severity:** Major for a deadline (a different shape of work: CDK bootstrap and a project layout); nothing in the runtime itself.
+- **Workaround:** The deprecated starter toolkit still deploys when its recommendation is suppressed (`AGENTCORE_SUPPRESS_RECOMMENDATION=1`, `direct_code_deploy`, with `uv` installed and run from the agent's folder); those steps are in `agent/README.md`. The agent is also tested locally against the AgentCore Runtime HTTP contract.
+- **Suggestion:** A one-page "deploy an existing Strands agent with the new CLI" guide, linked from the starter toolkit's deprecation message.
 

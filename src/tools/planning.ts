@@ -1,4 +1,5 @@
 /** Decision tools: can_i_run, plan_day (planner card), arm_plan, disarm_plan. */
+import { alertChannelFor } from "../push.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
@@ -131,7 +132,7 @@ export function registerPlanningTools(server: McpServer, ctx: SessionContext): v
     for (const i of immediate) {
       i.firedAt = t.at;
       ctx.delivered?.add(`${i.name}@${i.startAt}`); // this session has said it; its monitor must not say it again
-      server.sendLoggingMessage({ level: "warning", logger: "powerline.alerts", data: { kind: "reminder", text: `Run the ${i.name} now — ${reasonFor(i.source)}.`, appliance: i.name, startAt: i.startAt, source: i.source } }).catch(() => {});
+      alertChannelFor(server).send("reminder", `Run the ${i.name} now — ${reasonFor(i.source)}.`, { appliance: i.name, startAt: i.startAt, source: i.source }).catch(() => {});
     }
     await updateHousehold(ctx.userId, (hh) => { hh.armedPlan = items.length ? { armedAt: t.at, items } : null; });
 
@@ -145,7 +146,7 @@ export function registerPlanningTools(server: McpServer, ctx: SessionContext): v
   server.registerTool("remove_appliance", {
     title: "Remove an appliance",
     description: "Forget an appliance so it is no longer planned.",
-    inputSchema: z.object({ name: z.string().trim().min(1) }),
+    inputSchema: z.object({ name: z.string().trim().min(1).max(60) }),
     annotations: { destructiveHint: true, idempotentHint: true },
   }, async ({ name }) => {
     let removed = false;

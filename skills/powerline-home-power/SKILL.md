@@ -1,11 +1,11 @@
 ---
 name: powerline-home-power
-description: Answer a household's power questions through the Powerline MCP server — current solar/battery/grid state, "can I run the iron now?", planning appliances around the sun and the battery reserve, arming reminders, and the evening outlook. Use when the user mentions their inverter, solar, battery, generator, grid outage, NEPA/light, load shedding, or asks whether or when to run an appliance.
+description: Answer a household's power questions through the Powerline MCP server — current solar/battery/grid state, "can I run the iron now?", planning appliances around the sun and the battery reserve, arming reminders, and the evening outlook. Use when the user mentions their inverter, solar, battery, generator, grid outage, NEPA/light, load shedding, prepaid meter units, or asks whether or when to run an appliance or buy units.
 license: MIT
 compatibility: Requires a running Powerline MCP server (Streamable HTTP, spec 2025-11-25) connected to the host. No other tools needed.
 metadata:
   author: EdidiongA
-  version: "0.13.6"
+  version: "0.14.0"
   repo: https://github.com/EdidiongA/powerline
 ---
 
@@ -31,6 +31,9 @@ between sessions. **Never estimate power figures yourself; every number comes fr
 | `energy_report` | "How did we do today / this week?", "what did the grid cost?" | Renders the report card. Read `structuredContent.learned` to say whether the forecast is using this home's own pattern yet. Empty history → relay the "no readings yet" message, do not invent figures. |
 | `outage_outlook` | "How long can we last if the grid goes?", "is there light tonight?" | Hours of autonomy and the usual off-hours. `autonomyHours: null` means already below reserve — say so plainly. |
 | `set_tariff` | The user says what a unit of grid power costs | Reports then show cost and the value of the sun. |
+| `set_meter` | The user gives their prepaid meter number and DisCo, or what the meter shows | Verified with the vendor before it is saved; relay the customer name so they can check it. |
+| `prepaid_units` | "How are my units?", "will my units last?", "do I need to buy light?" | Balance estimate, the hour the units run out, what the battery does after that, and `suggestedAmount`. |
+| `buy_units` | ONLY when the user asks to buy or top up | Spends money. Powerline asks the user itself (elicitation); on hosts without it you get `needsConfirmation` + `quoteId` — read the quote out and call again with that `quoteId` only after an explicit yes. Read the token back in groups of four. |
 
 ## How to behave
 
@@ -44,15 +47,20 @@ between sessions. **Never estimate power figures yourself; every number comes fr
    *"Not now — the battery would dip to 14 %. Best around 09:00, when the sun covers it."*
 4. **Planning** → `plan_day`, then **offer to arm**: *"Shall I remind you at each start time?"*
    On yes → `arm_plan`. Repeat back what was armed and what was skipped and why.
-5. **Reminders arrive as notifications** (`notifications/message`, logger `powerline.alerts`,
-   `data.kind` = `reminder` | `low` | `critical` | `grid`). Relay them in one short line the
+5. **Reminders arrive as notifications.** Subscribe to `powerline://alerts`: each new alert raises
+   `notifications/resources/updated`; read the resource and relay entries whose `id` you haven't seen (`kind` =
+   `reminder` | `low` | `critical` | `grid` | `purchase`). Before you subscribe, alerts arrive as `notifications/message`
+   (logger `powerline.alerts`) with the same `id`, so remember the ids you relayed. Relay them in one short line the
    moment they arrive; do not wait to be asked.
 6. **Briefing** → `evening_briefing`. Read it as given; do not append numbers of your own.
-7. **Units.** Users say "2000 watts", "2 kW", "4500" (meaning 4.5 kW). Pass what they said;
+7. **Money.** Never call `buy_units` on your own initiative, to "help", or because `prepaid_units` suggested a top-up:
+   offer it and let the user ask. Never pass a `quoteId` the user has not just said yes to. If the reply says
+   *Simulated vendor*, say so — no real money moved.
+8. **Units.** Users say "2000 watts", "2 kW", "4500" (meaning 4.5 kW). Pass what they said;
    `setup_system` and `add_appliance` normalise and tell you what they stored.
-8. **Reports are history, forecasts are future.** `energy_report` is what happened; `power_status` and
+9. **Reports are history, forecasts are future.** `energy_report` is what happened; `power_status` and
    `can_i_run` are what will. Do not mix them in one sentence without saying which is which.
-9. **Never invent a figure.** If a tool errors, say what failed in plain words and suggest
+10. **Never invent a figure.** If a tool errors, say what failed in plain words and suggest
    asking again; do not fill the gap with a guess.
 
 ## Example

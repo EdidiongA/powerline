@@ -1,7 +1,7 @@
 # Powerline — Alexa+ home power copilot
 
 [![CI](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml/badge.svg)](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-134%20%2B%20headless%20browser-1e9e5a)](test/)
+[![tests](https://img.shields.io/badge/tests-165%20%2B%20headless%20browser-1e9e5a)](test/)
 [![MCP 2025-11-25](https://img.shields.io/badge/MCP-2025--11--25%20%C2%B7%20Streamable%20HTTP-1e9e5a)](https://modelcontextprotocol.io)
 [![MCP Apps](https://img.shields.io/badge/MCP%20Apps-3%20cards%20%C2%B7%20built--in%20host-4b7bb8)](src/ui/)
 [![AWS](https://img.shields.io/badge/AWS-Bedrock%20%C2%B7%20DynamoDB%20%C2%B7%20ECS%20Express-e8a33d)](docs/DEPLOY.md)
@@ -13,7 +13,7 @@ Millions of households on unreliable grids make power decisions by guesswork: *C
 battery last the night? When is grid coming back?* Powerline makes the inverter conversational. It is a
 self-hosted **MCP server (spec 2025-11-25, Streamable HTTP)** that forecasts the battery from live inverter
 data, answers with **interactive MCP App cards**, plans the day around the sun, **reminds you itself** when
-it is time, **learns the household's own pattern**, and ships with its **own simulated Alexa+ host** so
+it is time, **tracks and buys prepaid units** (after you say yes), **learns the household's own pattern**, and ships with its **own simulated Alexa+ host** so
 anyone can try it in a browser.
 
 ![Powerline's simulated Alexa+ host on the live deployment, with Amazon Bedrock answering: status card, "can I run the iron?", the planner re-planning from a tick, and the weekly report](docs/host.gif)
@@ -22,19 +22,20 @@ anyone can try it in a browser.
 
 | | |
 | --- | --- |
-| **Tools · prompts · cards · resources** | 14 · 5 · 3 · 4 — every tool annotated (`readOnly` / `destructive` / `idempotent`) |
+| **Tools · prompts · cards · resources** | 17 · 5 · 3 · 5 — every tool annotated (`readOnly` / `destructive` / `idempotent`) |
 | **Decides** | `can_i_run`, `plan_day` from a property-tested forecast: SOC integration, learned grid pattern, clear-sky solar scaled by the array's *observed* yield |
 | **Acts** | `arm_plan` → reminders pushed over the session stream at each start time; low-battery / grid alerts; asks first (elicitation) before replacing a committed plan |
-| **Remembers** | profile, appliances, tariff, armed plan, 14 days of hourly history per household — DynamoDB (conditional writes) or disk |
+| **Buys** | `prepaid_units` says when the meter's units run out and what that does to the battery; `buy_units` tops up after an explicit yes (elicitation, or a quote on hosts that can't ask), with spending caps, pending-before-vend records and no double purchase — simulated vendor by default, **VTpass sandbox** when keyed |
+| **Remembers** | profile, appliances, tariff, prepaid meter and purchases, armed plan, 14 days of hourly history per household — DynamoDB (conditional writes) or disk |
 | **Learns** | after 3 days the forecast uses *this* home's hour-by-hour load shape and real solar yield; the report says so |
 | **Reports** | solar made, house used, grid hours and cost, worst battery point — today / yesterday / week |
 | **Real data** | Victron VRM (read live from Victron's public demo installation), Growatt OpenAPI (replay-tested), simulator |
 | **Host** | `/demo`: full MCP Apps host (SDK `AppBridge`), pushed alerts as toasts, elicitation dialog, voice in/out, Bedrock or offline rule router |
 | **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
-| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS) |
-| **Proven** | 134 tests — unit, property (1,500 random households), fuzz (350 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
-| **For agents** | Agent Skill (`skills/`), prompts, household resource, 26-entry friction log, docs PR upstream |
+| **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS), and an autonomous evening agent on **Strands Agents + Bedrock** that drives Powerline over MCP ([`agent/`](agent/)) |
+| **Proven** | 165 tests (plus 7 for the agent) — unit, property (1,500 random households), fuzz (425 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
+| **For agents** | Agent Skill (`skills/`), prompts, household resource, 30-entry friction log, docs PR upstream |
 
 Supported inverter platforms: **Growatt** (ShinePhone API token) and **Victron Energy** (VRM Portal access
 token). A built-in simulator runs without any hardware.
@@ -44,9 +45,10 @@ token). A built-in simulator runs without any hardware.
 | Requirement | Where it is called at runtime |
 | --- | --- |
 | **Alexa+ track** — self-hosted MCP server, spec **2025-11-25**, **Streamable HTTP** | [`src/http.ts`](src/http.ts) — `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/server` v2; POST / GET (SSE) / DELETE on `/mcp`, sessions keyed by `Mcp-Session-Id` |
-| MCP Apps (cards), prompts, server-initiated notifications | [`src/tools/status.ts`](src/tools/status.ts), [`planning.ts`](src/tools/planning.ts) and [`report.ts`](src/tools/report.ts) — `registerAppTool` / `registerAppResource` (`@modelcontextprotocol/ext-apps`); [`src/tools/prompts.ts`](src/tools/prompts.ts); [`src/alerts.ts`](src/alerts.ts) — `sendLoggingMessage` on the GET stream |
+| MCP Apps (cards), prompts, server-initiated notifications | [`src/tools/status.ts`](src/tools/status.ts), [`planning.ts`](src/tools/planning.ts) and [`report.ts`](src/tools/report.ts) — `registerAppTool` / `registerAppResource` (`@modelcontextprotocol/ext-apps`); [`src/tools/prompts.ts`](src/tools/prompts.ts); [`src/alerts.ts`](src/alerts.ts) + [`src/push.ts`](src/push.ts) — `sendResourceUpdated` on the subscribed `powerline://alerts` resource, `sendLoggingMessage` as the fallback |
+| Purchasing (confirmed, capped) | [`src/tools/units.ts`](src/tools/units.ts) — `buy_units` asks via `elicitation/create` before spending; [`src/vending.ts`](src/vending.ts) — VTpass `merchant-verify` / `pay` / `requery` |
 | Agent Skill | [`skills/powerline-home-power/SKILL.md`](skills/powerline-home-power/SKILL.md) |
-| **AWS Builder** — Amazon Bedrock, Amazon DynamoDB | [`src/bedrock.ts`](src/bedrock.ts) — `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts) — conditional `PutItem` on `version` |
+| **AWS Builder** — Amazon Bedrock, Amazon DynamoDB, Strands Agents | [`src/bedrock.ts`](src/bedrock.ts) — `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts) — conditional `PutItem` on `version`; [`agent/powerline_agent.py`](agent/powerline_agent.py) — Strands `Agent` + `BedrockModel` + `MCPClient` (AgentCore Runtime app in [`agent/agentcore_app.py`](agent/agentcore_app.py)) |
 | **Open Source** — MIT, created in the window | [`LICENSE`](LICENSE), [`CHANGELOG.md`](CHANGELOG.md); upstream docs PR to the MCP TypeScript SDK |
 
 ## Evaluate it in five minutes
@@ -72,13 +74,13 @@ Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp` — [MCPJam In
 1. **Set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve**
 2. **Remember the iron uses 2000 watts for 30 minutes**
 3. **How's the power?** → dashboard card: state of charge, a plain verdict, the 24-hour ribbon
-4. **Can I run the iron for 30 minutes?** → *yes*, or *Not now — best time 09:00* (on a fresh store at night), from the forecast, not a guess
+4. **Can I run the iron for 30 minutes?** → *yes*, or *Not now — best time HH:00* with the projected low point, from the forecast, not a guess
 5. **Plan my power for today** → planner card; untick an appliance and watch it re-plan
 6. **How did we do this week?** → report card. A fresh simulated household starts with a seeded week of history (`SEED_HISTORY_DAYS=7`, set in `compose.yaml` and the deploy script), so there is something to report from the first minute; `npm run seed:history` does the same by hand.
-7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00 — run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600` to watch it land in about a minute
+7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00 — run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600 npm start` (or change `SIM_SPEED` in `compose.yaml`) to watch it land in about a minute
 8. **Use the evening_briefing tool** → one spoken paragraph (Bedrock when `BEDROCK_MODEL_ID` is set)
 
-Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (134; only the end-to-end suite touches the network, and only on localhost).
+Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (165; only the end-to-end suite touches the network, and only on localhost).
 Live inverter data: `POWER_SOURCE=victron VRM_DEMO=1 npm start` reads Victron's public demo installation.
 
 ## Quick start
@@ -88,9 +90,9 @@ npm install
 npm run build          # bundles the MCP App card + compiles the server
 npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
 npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
-npm run smoke          # (second terminal) full protocol round-trip through every tool + alert stream
+npm run smoke          # (second terminal) full protocol round-trip through the core tools + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
-npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 134 tests; e2e drives the real process with the official client
+npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 165 tests; e2e drives the real process with the official client
 ```
 
 Live telemetry:
@@ -136,6 +138,9 @@ start time without being asked, and the report's tabs re-query the server for to
 | `energy_report` | "How did we do this week?" | Solar made, house used, grid hours and cost, worst battery point — from the household's own hourly readings. **Report card** with today / yesterday / week tabs. Says what the forecast has learned. |
 | `outage_outlook` | "How long can we last if NEPA goes?" | Hours of autonomy to the reserve if the grid went off now, and the hours the grid is usually off, from history. |
 | `set_tariff` | "Grid costs 225 naira a unit" | Lets reports price grid energy and value the sun. |
+| `set_meter` | "My meter is 1111 1111 1111 1, Ikeja Electric, 3 units left" | Verifies the prepaid meter with the vendor (customer name back) before saving it; records what the meter shows. |
+| `prepaid_units` | "How are my units?", "Do I need to buy light?" | Estimated balance (last reading minus the grid energy Powerline recorded since), what the next 24 h need from the grid, **when the units run out and what the battery does after that**, and a top-up that covers the day. |
+| `buy_units` | "Buy 5,000 naira of units" | **Asks first** (MCP elicitation; a 5-minute quote on hosts that can't ask), then buys and returns the 20-digit token, also pushed as an alert. ₦20,000 per purchase and ₦50,000 per 24 h by default; recorded as pending before the vendor is called and re-queried, never re-bought, if the answer is unclear. Withheld from the autonomous agent. |
 
 **It learns.** A server-level recorder takes one reading an hour per household, whether or not anyone is connected (`src/recorder.ts`). After three full days the forecast swaps the
 generic load curve for **this household's own hour-by-hour median**, and scales the clear-sky solar model by
@@ -155,11 +160,43 @@ before advice, convert `bestStartHour` to a clock time, offer to arm after plann
 the moment they arrive, never invent a figure. Drop the folder into a skills directory and the MCP
 server and the skill describe the same product from both sides.
 
-**Server-initiated alerts.** Each session runs a monitor (`src/alerts.ts`) that pushes MCP `notifications/message`
-over the Streamable HTTP GET stream when the battery drops within 10 points of the reserve, reaches it, or the grid
-flips — no client request needed. Grid flips are also logged into the learned pattern automatically. Alerts are
-structured (`data: { kind, text, … }`), so when a host moves to the 2026-07-28 era — where MCP logging is deprecated
-in favour of `subscriptions/listen` — only the delivery call changes, not the alerts.
+**Prepaid units: the grid is only "on" if the meter has units.** Most Nigerian homes are on prepaid meters, and
+they run out at the worst moment: the grid comes back and the house stays dark. Powerline already forecasts the hours the
+grid will carry the house, so `prepaid_units` turns that into kWh, counts down from the household's last meter reading
+using the grid energy it has recorded since, and re-runs the battery forecast *without* the grid from the hour the units
+run out: *"The units run out around 22:00 while the grid is on; after that the battery carries the house and bottoms out at 24%.
+A top-up of ₦1,000 covers the next day."* The evening briefing says the same in one line. (The forecast does not yet model
+an inverter charging the battery from the grid, so for homes that do, the units estimate is a lower bound.)
+`buy_units` is the only tool that can spend money, so it is the most guarded one ([`src/tools/units.ts`](src/tools/units.ts)):
+nothing is bought without an explicit yes; a declined, cancelled, timed-out or unreadable answer buys nothing; the
+per-purchase and rolling 24-hour ceilings are checked inside the same conditional write that records the purchase; the
+purchase is stored as *pending* under a fresh VTpass request id before the vendor is called, and an unclear answer is
+re-queried with that id rather than bought again. Vendors sit behind one interface ([`src/vending.ts`](src/vending.ts)):
+a **simulated vendor** by default (deterministic tokens, no network, no money — every reply says so), or **VTpass**'s
+bill-payment API, sandbox only unless `VTPASS_ALLOW_LIVE=1`. The VTpass adapter is replay-tested against the documented
+responses (verify, delivered, processing, failed, a dropped connection); the live deployment uses the simulated vendor.
+
+![Prepaid units in the simulated host: the units run out at 22:00 while the grid is on; a confirmed ₦5,000 purchase returns the token, also pushed as an alert](docs/units.png)
+
+**Server-initiated alerts.** Each session runs a monitor (`src/alerts.ts`) that raises an alert when the battery
+drops within 10 points of the reserve, reaches it, or the grid flips, and at each armed start time — no client request
+needed. Grid flips are also logged into the learned pattern automatically. Delivery (`src/push.ts`) uses **resource
+subscriptions**: every alert is appended to the session's `powerline://alerts` resource, and a host that has
+subscribed (`resources/subscribe`) receives `notifications/resources/updated` and reads the new entries. That
+notification is current in protocol 2025-11-25 and maps onto the `resource_updated` event 2026-07-28 carries over
+`subscriptions/listen`, so the alert channel does not depend on MCP logging, which 2026-07-28 deprecates (SEP-2577).
+Hosts that don't subscribe still get each alert once as a `notifications/message` (logger `powerline.alerts`,
+`data: { kind, text, … }`), so MCPJam and older hosts keep working. The simulated host subscribes.
+
+## An agent that plans the day on its own (Strands + Amazon Bedrock)
+
+[`agent/`](agent/) holds an autonomous **evening agent** built with the Strands Agents SDK on Amazon Bedrock.
+It connects to Powerline as an MCP client (Streamable HTTP, bearer token), checks the battery and the outage
+outlook, plans tomorrow, **arms the plan** so Powerline reminds the household at each start time, and returns
+one paragraph. Run it nightly and the morning is planned before anyone speaks to Alexa+. The same agent is
+packaged as an Amazon Bedrock AgentCore Runtime app (`agent/agentcore_app.py`). A test starts a real Powerline
+and drives the agent with a scripted model, so CI proves the MCP wiring without AWS. The agent reads `prepaid_units`
+and mentions a suggested top-up, but it is never handed `buy_units`: an unattended agent does not spend money. See [`agent/README.md`](agent/README.md).
 
 ## How it works
 
@@ -169,11 +206,11 @@ in favour of `subscriptions/listen` — only the delivery call changes, not the 
 Alexa+ / MCP client ──Streamable HTTP (sessions, SSE, CORS)──▶ src/http.ts      sessions, auth, reaper, / and /healthz
                                                                  ├─ src/auth.ts       bearer token → household (constant-time, fails closed)
                                                                  └─ src/server.ts     composition root: one McpServer per session
-                                                                    ├─ src/tools/      household · status · planning · briefing
+                                                                    ├─ src/tools/      household · status · planning · briefing · report · prompts
                                                                     ├─ src/situation.ts  live telemetry + stored household → ForecastInput
                                                                     ├─ src/forecast.ts   SOC integration, can_i_run, plan_day, grid learning (pure)
                                                                     ├─ src/history.ts    daily reports, learned load shape + PV yield, autonomy (pure)
-                                                                    ├─ src/alerts.ts     server→client alerts + armed-plan reminders on the GET stream
+                                                                    ├─ src/alerts.ts     server→client alerts + armed-plan reminders (delivered by src/push.ts)
                                                                     ├─ src/store/        disk (atomic) | dynamodb (conditional writes)
                                                                     ├─ src/telemetry/    sim | victron (VRM v2) | growatt (OpenAPI v1), shared cache
                                                                     ├─ src/bedrock.ts    Converse API briefing (AWS Builder), timeout + fallback
@@ -194,7 +231,7 @@ Grid availability is learned from logged on/off events, binned per weekday-hour.
 dashboard of tiles: the state of charge and a plain-language verdict ("holds past midnight") lead,
 a quiet three-column strip carries the live figures, and a single 24-hour ribbon shows the battery
 line against a solar field, grid bands and the reserve floor. The planner places each appliance as a
-block on the same time track. Both views are tested in jsdom against absent, partial and hostile
+block on the same time track. All three cards are tested in jsdom against absent, partial and hostile
 payloads (`test/cards.test.ts`) — a card that throws renders as a blank box in the host, so this is
 the failure mode worth guarding.
 
@@ -272,6 +309,7 @@ memory, multi-vendor telemetry, and the interactive card.
 | `TELEMETRY_TTL_MS` | `10000` | shared cache in front of the inverter API |
 | `DEMO_USER_ID` | `demo-household` | stand-in for authenticated identity |
 | `TZ_OFFSET` | `1` | server-default UTC offset in hours; a household's own `setup_system … tzOffset` overrides it |
+| `SEED_DAYS` / `SEED_END` / `SEED_HOUSEHOLD` | `7` / now / `DEMO_USER_ID` | `npm run seed:history` only: how many days, where the history ends (match `SIM_CLOCK_START`), which household |
 | `SEED_HISTORY_DAYS` | unset | simulated telemetry only: households with no readings get this many days of plausible history on start, ending where the simulated clock starts |
 | `HISTORY_INTERVAL_MS` | `30000` | how often the server-level recorder reads telemetry (one sample per hour slot per household is kept) |
 | `SIM_CUTOFF_SOC` | `10` | the simulated inverter's low-battery disconnect |
@@ -286,6 +324,8 @@ memory, multi-vendor telemetry, and the interactive card.
 | `ALERT_INTERVAL_MS` / `ALERT_REPEAT_MS` | `30000` / `900000` | alert poll interval; repeat while condition persists |
 | `VRM_TOKEN` / `VRM_DEMO` / `VRM_SITE_ID` | — | Victron |
 | `GROWATT_TOKEN` / `GROWATT_BASE_URL` / `GROWATT_PLANT_ID` / `GROWATT_DEVICE_SN` / `GROWATT_DEVICE_TYPE` | — | Growatt (type 5 = SPH, 7 = MIN) |
+| `UNITS_VENDOR` | `sim` | `sim` \| `vtpass`; VTpass needs `VTPASS_API_KEY` + `VTPASS_SECRET_KEY` (free sandbox account); `VTPASS_BASE_URL` other than the sandbox is refused unless `VTPASS_ALLOW_LIVE=1` |
+| `UNITS_MAX_NGN` / `UNITS_DAILY_NGN` | `20000` / `50000` | `buy_units` ceilings: one purchase, and the rolling 24 hours |
 | `AWS_REGION` / `BEDROCK_MODEL_ID` | unset = disabled | e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`; `BEDROCK_TIMEOUT_MS` (15000) caps the call, plain facts on failure |
 
 ## What is real and what is simulated
@@ -295,6 +335,7 @@ Judges and users deserve the line drawn clearly.
 | Real | Simulated / not claimed |
 | --- | --- |
 | The MCP server, transport, sessions, auth, cards, prompts, skill, alerts and reminders — all run as shown, through any MCP Apps host. | **The host.** `/demo` is Powerline's own simulated Alexa+ host (a genuine MCP Apps host, but not Alexa), and MCPJam Inspector is the other host used in the demo; no claim is made of a completed connection inside the production Alexa+ app. The simulated host's language model is Amazon Bedrock when configured, otherwise a phrase router — the header says which. |
+| **Prepaid units** — the balance arithmetic, the run-out forecast, the confirmation, the caps and the purchase records all run as shown. | **The vendor.** The live deployment and the demo use a simulated vendor (no network, no money); the VTpass adapter is replay-tested against VTpass's documented sandbox responses. No real-money purchase is made or claimed. |
 | **Victron VRM** telemetry — read live from Victron's public demo installation, and from any site with a personal access token. | **Growatt** — replay-tested against recorded payloads from both device families; not yet run against a live unit. |
 | **Amazon Bedrock** phrases the briefing; **Amazon DynamoDB** stores households — both exercised at runtime with the project's own account. | **The default telemetry** is a simulator (clear-sky Lagos curve, scripted outage bands) so the project runs with no hardware and no account. |
 | The forecast engine — pure arithmetic on the household's own numbers, property-tested. **Weather** — Open-Meteo's radiation forecast for the household's coordinates, when `WEATHER_LAT/LON` are set. | Without coordinates (and on a simulated clock) the solar curve is the clear-sky model; a provider forecast (VRM exposes one) is used only when it is a full, finite series. The card footer always says which source is in play. |
@@ -310,11 +351,12 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 
 - [x] Streamable HTTP sessions, MCP App dashboard, forecast engine, Victron + Growatt + sim adapters
 - [x] `plan_day` interactive planner card (toggle appliances → re-plans via `callServerTool`)
-- [x] Server-initiated low-battery / grid alerts over the GET SSE stream
+- [x] Server-initiated low-battery / grid alerts, pushed as updates to a subscribed `powerline://alerts` resource (logging as fallback)
 - [x] `arm_plan`: reminders pushed at each start time without being asked
+- [x] Prepaid units: run-out forecast, confirmed and capped purchases (`set_meter`, `prepaid_units`, `buy_units`), simulated vendor + VTpass sandbox adapter
 - [x] Bedrock briefing with plain-facts fallback; DynamoDB store with conditional writes
 - [x] Per-household bearer tokens (fail-closed), session ↔ household binding, CORS for browser hosts
-- [x] Docker image + compose; CI on Ubuntu + Windows; 134 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
+- [x] Docker image + compose; CI on Ubuntu + Windows; 165 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
 - [x] MCP prompts, an Agent Skill, tool annotations, a household resource, and elicitation before the one destructive action
 - [x] History: hourly samples, energy reports with cost, outage outlook, and a forecast that learns the household's own load shape and real solar yield
 - [x] `scripts/deploy-ecs-express.sh` — one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI
@@ -323,7 +365,9 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 - [x] Weather-aware solar forecast (Open-Meteo), with clear-sky fallback
 - [x] Simulated Alexa+ host at `/demo`: full MCP Apps host (AppBridge), Bedrock or rule router, voice, elicitation, pushed alerts
 - [x] Appliance presets so "add the kettle" just works
-- [ ] Demo video < 3 min, product feedback, friction log
+- [x] Product feedback (`PRODUCT_FEEDBACK.md`) and a 30-entry friction log (`FRICTION_LOG.md`)
+- [x] A Strands agent on Bedrock that plans and arms the day over MCP (`agent/`)
+- [ ] Demo video < 3 min
 
 ## License
 

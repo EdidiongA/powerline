@@ -13,6 +13,7 @@
  * so alerts repeat on ALERT_REPEAT_MS while a condition persists (default 15 min)
  * and the first check is deferred one interval to give the client time to connect.
  */
+import { alertChannelFor } from "./push.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { TelemetrySource } from "./telemetry/index.js";
 import { getHousehold, updateHousehold } from "./store/index.js";
@@ -36,8 +37,9 @@ export function startAlertMonitor(
   let lastSeenAt = 0;                      // telemetry time at the previous tick
   const due = (last: number) => last === 0 || Date.now() - last >= repeatMs;
 
+  // Resource-subscription push when the host subscribed to powerline://alerts, MCP logging otherwise (push.ts).
   const notify = (kind: string, text: string, data: Record<string, unknown> = {}) =>
-    server.sendLoggingMessage({ level: "warning", logger: "powerline.alerts", data: { kind, text, ...data } }).catch((e) => console.error("[alerts] send failed:", (e as Error).message));
+    alertChannelFor(server).send(kind, text, data).catch((e) => console.error("[alerts] send failed:", (e as Error).message));
 
   const tick = async () => {
     try {

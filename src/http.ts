@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { Authenticator } from "./auth.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { createServer, checkCardsBuilt, VERSION } from "./server.js";
+import { defaultVendor } from "./tools/units.js";
 import { sourceFromEnv } from "./telemetry/index.js";
 import { startAlertMonitor, type AlertMonitor } from "./alerts.js";
 import { getStore, storeHealth } from "./store/index.js";
@@ -252,7 +253,7 @@ app.post("/oauth/token", async (c) => {
 app.get("/healthz", async (c) => {
   const store = await storeHealth();
   const publicStore = { ...store, detail: store.detail.replace(/\/[^\s(]+store\.json/, "store.json") }; // no filesystem paths on a public endpoint
-  return c.json({ ok: store.ok, sessions: sessions.size, telemetry: source.name, store: publicStore, llm: llmEnabled, version: VERSION, auth: auth.required ? "token-or-oauth" : "open", oauth: auth.required ? oauth.stats : null }, store.ok ? 200 : 503);
+  return c.json({ ok: store.ok, sessions: sessions.size, telemetry: source.name, store: publicStore, llm: llmEnabled, units: defaultVendor().name, version: VERSION, auth: auth.required ? "token-or-oauth" : "open", oauth: auth.required ? oauth.stats : null }, store.ok ? 200 : 503);
 });
 
 /**

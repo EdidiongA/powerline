@@ -1,6 +1,6 @@
 # Product feedback
 
-Written in first person from building Powerline between 8 September and 15 October 2026. One section
+Written in first person from building Powerline between 8 September and 19 October 2026. One section
 per tool, API or SDK, each answering the five questions the submission asks: what I used it for, what
 worked well, what needs work, how onboarding felt, and whether I would build with it again.
 Severity and dates for every "needs work" item are in [`FRICTION_LOG.md`](FRICTION_LOG.md).
@@ -44,10 +44,12 @@ strong enough that a renamed field fails the build, not the demo.
 the logging capability. With the right package names and one paragraph about those two silent drops it
 would be twenty minutes.
 
-- MCP logging is **deprecated as of protocol 2026-07-28 (SEP-2577)**, yet on a 2025-11-25 session it is the
-  only channel a server has for an alert nobody asked for. The replacement (`subscriptions/listen`) exists
-  only on the newer era. A server that must support both has to send the same alert two ways. The docs
-  should say what a 2025-era server should use for unsolicited alerts during the deprecation window.
+- MCP logging is **deprecated as of protocol 2026-07-28 (SEP-2577)**, and it is the channel most examples use for
+  an alert nobody asked for. The channel that works on both eras is **resource subscriptions**: append the alert to
+  a resource and send `notifications/resources/updated` (2025-11-25 via `resources/subscribe`, 2026-07-28 via
+  `subscriptions/listen`). Powerline moved its alerts there, keeping logging only for hosts that don't subscribe.
+  It took reading the type definitions to find that; the docs should say it in one line next to the deprecation
+  notice.
 
 - Credit where due: the client's **OAuth support worked first time** against my own spec-following
   authorization server — discovery from `resource_metadata`, dynamic registration, PKCE, `finishAuth`,
@@ -262,7 +264,10 @@ exactly what to aim for: bidirectional cards, state across sessions, an assistan
 **What needs work.** The Alexa+ resources link the MCP spec but not the v2 SDK packages or an MCP Apps
 example; a combined Streamable HTTP + MCP Apps starter would have saved every team on this track a day.
 "Spec 2025-11-25 or a later version, once confirmed" should be resolved now that 2026-07-28 ships in
-the SDK. The credit email could carry the three AWS account notes above.
+the SDK. The credit email could carry the three AWS account notes above. The judging criteria name
+"purchasing capabilities" as a creative Alexa+ direction, but nothing in the track resources says how a
+purchase should be confirmed on Alexa+ — MCP elicitation, an Alexa-side confirmation, Amazon Pay — so I
+built the most conservative version I could defend (elicitation, a quote fallback, caps; see the friction log).
 
 **Onboarding:** the live Build Session was the most useful hour; the written resources needed the
 package names.
@@ -270,7 +275,71 @@ package names.
 **Build on this track again?** **Yes.** The combination of an open protocol, cards, and a real device
 audience is the first time I have wanted to ship a voice integration.
 
+## 11. Strands Agents SDK (Python) with Amazon Bedrock
+
+**Used for:** `agent/powerline_agent.py`, an autonomous evening agent that drives Powerline through its MCP
+tools (status, outage outlook, plan, arm) and writes a one-paragraph summary. `BedrockModel` (Claude Haiku 4.5
+on an inference profile) is the model; `MCPClient` with `streamablehttp_client` and a bearer header is the
+bridge to Powerline.
+
+**What worked well.** The MCP client connected to a TypeScript Streamable HTTP server and listed all of Powerline's tools
+on the first try, auth header included. The `Model` interface is small enough to implement a scripted stand-in
+in forty lines, which made a real end-to-end test possible without AWS: the agent's tool calls go over MCP to
+a live Powerline process and the test asserts the plan is armed on the server.
+
+**What needs work.** (1) When the server answers 401, `MCPClient` prints a full exception-group traceback
+from its background thread before the caller sees the error, and exits with a "coroutine was never awaited"
+warning; a single clear exception would be enough. (2) The docs show MCP over stdio first; the Streamable
+HTTP-with-headers case, which is what any hosted MCP server needs, deserves the first example.
+
+**Onboarding:** under an hour from `pip install` to a passing end-to-end test.
+
+**Build with it again?** **Yes.** It is the shortest path I have found from "an MCP server exists" to
+"an agent uses it on a schedule".
+
+## 12. Amazon Bedrock AgentCore (Runtime SDK and CLI)
+
+**Used for:** packaging the same agent as an AgentCore Runtime app (`agent/agentcore_app.py`,
+`BedrockAgentCoreApp` with an `@app.entrypoint`), tested locally against its `/ping` and `/invocations`
+contract. Not deployed for the hackathon (see below).
+
+**What worked well.** Wrapping an existing agent took a dozen lines, and the app is a plain ASGI app, so
+the runtime contract can be tested with an ordinary test client.
+
+**What needs work.** The deployment path moved under my feet: the Python starter toolkit
+(`bedrock-agentcore-starter-toolkit`, `agentcore configure/launch`) now prints that it is no longer
+supported and points to a new npm CLI (`@aws/agentcore`) whose deploy is a CDK project
+(`create` → `add` → `deploy`). Two days before a deadline that is a different shape of work (CDK bootstrap,
+a project layout) than the "configure and launch" the existing tutorials describe, so I stopped at a tested,
+deployable app rather than ship an unverified deployment.
+
+**Onboarding:** quick for the SDK; the CLI change is the friction (logged).
+
+**Build with it again?** **Yes**, once the new CLI's "deploy an existing Strands agent" path is documented
+end to end.
+
 ---
+
+## 13. VTpass bill-payment API (prepaid electricity, sandbox)
+
+**Used for:** `buy_units` — verifying a prepaid meter (`/merchant-verify`), buying units (`/pay`) and asking
+again about an unclear purchase (`/requery`), in `src/vending.ts`.
+
+**What worked well.** One request shape for every distribution company (only the `serviceID` changes), a
+sandbox with a documented test meter, and per-DisCo pages with complete sample responses. Header auth
+(`api-key` + `secret-key`) is simple to get right.
+
+**What needs work.** The rules that decide correctness live on separate pages: the request-id format
+(first 12 characters `YYYYMMDDHHII` in Lagos time) is not on the endpoint pages, and the response-code table
+is not linked from the samples, so "processing" versus "failed" has to be pieced together. The token and units
+come back under different field names on different DisCo pages (`token`, `purchased_code`, `mainToken`;
+`units`, `tokenAmount`, `mainTokenUnits`).
+
+**Onboarding:** the documentation was enough to write and replay-test the adapter in an afternoon; a sandbox
+account is needed for keys.
+
+**Build with it again?** **Yes**, for the reach (every DisCo in one integration), with the response handling
+kept defensive.
 
 ## General-purpose tooling (no separate section)
 
@@ -288,4 +357,6 @@ per-household state with conditional writes, strongly consistent reads, jittered
 records. Both are exercised at runtime (`npm run start:aws` with `STORE=dynamodb` and
 `BEDROCK_MODEL_ID` set) and the integration is documented in the README's *Store* and *Environment*
 sections. The judges' live instance runs on **Amazon ECS Express Mode** (section 9) with a task role for
-Bedrock; App Runner, the first plan, closed to new customers in April 2026 — see the friction log.
+Bedrock; App Runner, the first plan, closed to new customers in April 2026 — see the friction log. An autonomous evening agent built with the **Strands Agents SDK** on **Amazon Bedrock** (section 11)
+uses Powerline's MCP tools to plan and arm the household's day; it is packaged as an **Amazon Bedrock AgentCore
+Runtime** app (section 12), tested locally, not deployed.

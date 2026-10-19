@@ -4,11 +4,11 @@
  */
 export interface RuleTurn { tool: string | null; input: Record<string, unknown>; text: string; also?: Array<{ tool: string; input: Record<string, unknown> }> }
 
-const MENU = "I didn't catch that. Try “how's the power?”, “can I run the iron for 30 minutes?”, “plan my power for today”, “how did we do this week?”, “will the battery last till morning?” — or “give me everything” for the full picture.";
+const MENU = "I didn't catch that. Try “how's the power?”, “can I run the iron for 30 minutes?”, “plan my power for today”, “how did we do this week?”, “will the battery last till morning?” — “how are my units?”, “buy 5,000 naira of units” — or “give me everything” for the full picture.";
 
 const num = (s: string, re: RegExp) => { const m = re.exec(s); return m ? Number(m[1]) : undefined; };
 // Punctuation goes, decimals stay ("4.5 kw" must survive; a trailing "." must not).
-const clean = (s: string) => s.toLowerCase().replace(/[?!,;:]/g, " ").replace(/\.(?!\d)/g, " ").replace(/\s+/g, " ").trim();
+const clean = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, "$1").toLowerCase().replace(/[?!,;:]/g, " ").replace(/\.(?!\d)/g, " ").replace(/\s+/g, " ").trim();
 
 export function routeByRules(utterance: string, available: string[]): RuleTurn {
   const u = clean(utterance).slice(0, 400); // nothing spoken is longer; keeps every regex below linear in practice
@@ -33,6 +33,50 @@ export function routeByRules(utterance: string, available: string[]): RuleTurn {
     if (arrayKw && batteryKwh && inverterKw) return call("setup_system", { arrayKw, batteryKwh, inverterKw, reserveSocPct: reserve ?? 20 });
     return { tool: null, input: {}, text: "Tell me the array size in kilowatts, the battery in kilowatt-hours, the inverter in kilowatts and the reserve percentage — for example: set up my solar, 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve." };
   }
+  // Prepaid meter and units. Before the tariff and appliance rules: "add 5000 naira to my meter" is a purchase,
+  // "my meter shows 40 units" is a balance. Purchases never carry a confirmation: the server always asks.
+  const meterNo = /\b(\d[\d ]{9,16}\d)\b/.exec(u)?.[1]?.replace(/\s/g, "");
+  const meterNumber = meterNo && meterNo.length >= 11 && meterNo.length <= 13 ? meterNo : undefined;
+  const disco = /\b(ikeja electric|ikeja|ikedc|eko|ekedc|abuja|aedc|ibadan|ibedc|phed|port harcourt|kano|kedco|jos|kaduna|enugu|eedc|benin|bedc|aba|yola)\b/.exec(u)?.[1];
+  const nairaAmt = (() => {
+    const k = /(?:₦|\bn|\bngn\s*)?([\d.]+)\s*k\b/.exec(u); if (k) return Math.round(Number(k[1]) * 1000);
+    return num(u, /([\d.]+)\s*(?:naira|ngn)\b/) ?? num(u, /(?:₦|\bngn\s*|\bn)([\d.]+)\b/);
+  })();
+  const notUnits = /\b(battery|batteries|inverter|panels?|solar|generator)\b/.test(u);
+  // A bare number in a purchase ("top up my meter with 5000", "buy 5000") is naira when it is big enough to be money
+  // and is not the meter number or a count of units.
+  const notMoney = /\b(airtime|data|phone|card|recharge card)\b/.test(u) || /\b0[789][01](?: ?\d){8}\b/.test(u); // a Nigerian mobile number: airtime, not electricity
+  const bareNaira = (() => {
+    // Never the meter number (spaced or not) or a time ("before 1800"). A year is indistinguishable from ₦2,000; the dialog shows the amount.
+    const rest = u.replace(/\b\d[\d ]{9,16}\d\b/g, " ").replace(/\b(?:before|after|at|by|in|since|from|till|until)\s+\d+\b/g, " ");
+    for (const m of rest.matchAll(/\b(\d{3,7})(?!\s*(?:units?|kwh|%|w\b|watts?|minutes?|mins?|hours?))\b/g)) {
+      const n = Number(m[1]);
+      if (n >= 500 && n <= 1_000_000) return n;
+    }
+    return undefined;
+  })();
+  // "My units have finished" sets the balance to zero. Only units or the meter: "light is out" is a grid outage in Lagos.
+  if (has("set_meter") && /\b(units?|meter)\b.{0,20}\b(finished|don finish|ran out|run out|are out|is empty|have finished|has finished|empty)\b|\bout of units\b|\blight don finish\b/.test(u)
+    && !/\b(will|when|how long|yesterday|last (night|week)|nepa|phcn|grid|took)\b/.test(u) && !notUnits) return call("set_meter", { unitsLeft: 0 });
+  const addToMeter = /\badd\b.{0,30}\b(?:to|on) (?:my |the )?meter\b/.test(u) && (nairaAmt !== undefined || bareNaira !== undefined);
+  if (/\b(do|should|must) (i|we) (need to |have to )?(buy|top ?up|recharge)\b/.test(u) && !notUnits) return call("prepaid_units");
+  if (((/\b(buy|top ?up|recharge|vend)\b/.test(u) && (/\b(units?|light|electricity|meter|token|naira|ngn|credit|prepaid)\b|₦|\d\s*k\b/.test(u) || (/^\s*(buy|top ?up|recharge)\s+(₦\s*)?\d/.test(u) && bareNaira !== undefined))) || addToMeter) && !notUnits && !notMoney) {
+    // "Buy 20 units" is kWh, not naira; buy_units takes money. Ask rather than guess which the person meant.
+    if (nairaAmt === undefined && /\d/.test(u) && /\b\d[\d.]*\s*(units?|kwh)\b/.test(u)) return { tool: null, input: {}, text: "Say it in naira — for example “buy 5,000 naira of units”. Or ask “how are my units?” and I'll suggest a top-up." };
+    const amt = nairaAmt !== undefined && Number.isFinite(nairaAmt) ? nairaAmt : bareNaira;
+    return call("buy_units", amt !== undefined ? { amount: Math.round(amt) } : {});
+  }
+  if (/\bmeter\b/.test(u) && (meterNumber || disco)) {
+    const unitsLeft = num(u, /([\d.]+)\s*(?:units?|kwh)\b/);
+    return call("set_meter", { ...(meterNumber ? { meterNumber } : {}), ...(disco ? { disco } : {}), ...(unitsLeft !== undefined && String(unitsLeft) !== meterNumber ? { unitsLeft } : {}) });
+  }
+  if (/\b(meter|units?)\b/.test(u) && /\b(shows?|reads?|has|have|left|remaining|balance is)\b/.test(u) && /\d/.test(u) && !/\bhow\b/.test(u)) {
+    const unitsLeft = num(u, /([\d.]+)\s*(?:units?|kwh)\b/) ?? num(u, /(?:shows?|reads?|has|have|is)\s+([\d.]+)/);
+    if (unitsLeft !== undefined) return call("set_meter", { unitsLeft });
+  }
+  // Balance questions only: "each unit costs 225" is a tariff, "units did we use yesterday" is a report, "can I run X on units" is can_i_run.
+  if (/\b(my units|my meter|our units|the units|units? (left|remaining|last)|how (many|much) units?( do| have| are| is)?\b|will (my |our |the )?units|units? (run|running) out|prepaid|meter balance|(need|have) to buy)\b/.test(u)
+    && !/\b(costs?|price|tariff|per (unit|kwh)|a unit|each unit|yesterday|this week|last week|today|did we|used)\b|\bcan i\b|\bcould i\b|\bwill (the|my|a|an) [a-z ]+ use\b/.test(u) && !notUnits) return call("prepaid_units");
   // Tariff
   if (/\b(tariff|per (unit|kwh)|a unit|costs?)\b/.test(u) && /\b(grid|nepa|phcn|electric|unit|kwh)\b/.test(u)) {
     const perKwh = num(u, /([\d.]+)\s*(naira|ngn|₦|per|a unit|\/)/) ?? num(u, /(?:naira|ngn|₦)\s*([\d.]+)/);
@@ -83,6 +127,6 @@ export function routeByRules(utterance: string, available: string[]): RuleTurn {
   if (/\b(power|battery|solar|charge|status|how are we|how's|hows|how is|electricity|energy|inverter|update|situation|where are we|panels?|grid|light|nepa|phcn)\b/.test(u)) return call("power_status");
   // Greetings and "what can you do" get the menu; anything else gets the menu with examples (never the same dead end twice in a row is up to the host, which shows the hint chips).
   return { tool: null, input: {}, text: /\b(hi|hello|hey|help|what can you do|who are you|menu|options)\b/.test(u)
-    ? "I'm Powerline. I can tell you how the power is, whether you can run an appliance, plan the day around the sun, arm reminders, report on the week, or give the overnight outlook — or say “give me everything”."
+    ? "I'm Powerline. I can tell you how the power is, whether you can run an appliance, plan the day around the sun, arm reminders, report on the week, track and buy prepaid units, or give the overnight outlook — or say “give me everything”."
     : MENU };
 }

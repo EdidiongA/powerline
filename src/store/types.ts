@@ -35,6 +35,34 @@ export interface Sample {
 /** Grid tariff, so reports can say what the grid cost and what the sun was worth. */
 export interface Tariff { currency: string; perKwh: number }
 
+/** "naira", "₦", "ngn" → "NGN"; anything else upper-cased. Applied on write and on every read, so old records agree too. */
+export const normalizeCurrency = (c: string): string => (/^(₦|n|naira|ngn)$/i.test(c.trim()) ? "NGN" : c.trim().toUpperCase().slice(0, 8));
+
+/** The household's prepaid meter. The balance is the last known figure (the user's, or after a purchase); usage since is estimated from history. */
+export interface Meter {
+  number: string;          // 11–13 digits
+  disco: string;           // key into DISCOS (src/vending.ts)
+  customerName?: string;   // as the distribution company has it, from verification
+  minAmount?: number;      // the DisCo's minimum purchase, from verification
+  unitsKwh?: number;       // last known balance
+  unitsAt?: string;        // telemetry time of that balance
+  lowerBound?: boolean;    // the balance is a floor (units bought while the previous balance was unknown)
+}
+
+/** One prepaid purchase. Recorded as "pending" before the vendor is called, so a crash mid-call never loses money silently. */
+export interface Purchase {
+  ref: string;             // request id sent to the vendor; the idempotency key
+  at: string;              // wall-clock ISO (spending limits are about real days, not simulated ones)
+  amount: number;          // naira
+  meter: string;
+  vendor: string;
+  status: "pending" | "delivered" | "failed";
+  token?: string;
+  units?: number;
+  message?: string;
+  vendorRef?: string;      // the vendor's transaction id, for reconciliation
+}
+
 export interface Household {
   profile: SystemProfile | null;
   appliances: Appliance[];
@@ -44,6 +72,9 @@ export interface Household {
   /** Hourly history, newest last, bounded to MAX_SAMPLES (14 days). */
   samples?: Sample[];
   tariff?: Tariff | null;
+  meter?: Meter | null;
+  /** Prepaid purchases, newest last, bounded to MAX_PURCHASES. */
+  purchases?: Purchase[];
   updatedAt: string;
   /** Incremented on every successful write. Absent on records written before versioning. */
   version?: number;
@@ -76,6 +107,8 @@ export const emptyHousehold = (): Household => ({
   gridEvents: [],
   samples: [],
   tariff: null,
+  meter: null,
+  purchases: [],
   updatedAt: new Date().toISOString(),
   version: 0,
 });
@@ -102,6 +135,9 @@ export class StoreConfigError extends Error {
 export const MAX_ITEM_BYTES = 300_000;
 export const MAX_GRID_EVENTS = 500;
 export const MAX_SAMPLES = 14 * 24;
+export const MAX_PURCHASES = 50;
+/** Far above what the daily ceiling allows (₦50,000 / ₦500 minimum = 100 purchases), so trimming can never hide spending. */
+export const MAX_RECENT_PURCHASES = 1000;
 
 /**
  * Normalise and bound a record so a write can never be rejected for size and a
@@ -155,7 +191,32 @@ export function sanitize(h: Household): Household {
   // and zero minutes makes every run vacuously covered.
   h.appliances = arr<Appliance>(h.appliances).filter((a) => a && typeof a.name === "string" && wattsOk(a.watts) && minutesOk(a.minutes)).map((a) => ({ ...a, name: a.name.slice(0, 60) }));
   h.tariff = obj(h.tariff) as typeof h.tariff;
-  h.tariff = h.tariff && Number.isFinite(h.tariff.perKwh) && h.tariff.perKwh >= 0 && typeof h.tariff.currency === "string" ? { currency: h.tariff.currency.slice(0, 8), perKwh: h.tariff.perKwh } : null;
+  h.tariff = h.tariff && Number.isFinite(h.tariff.perKwh) && h.tariff.perKwh >= 0 && typeof h.tariff.currency === "string" ? { currency: normalizeCurrency(h.tariff.currency), perKwh: h.tariff.perKwh } : null;
+  // Prepaid meter: digits only, a known distribution company, a finite non-negative balance with a plausible time.
+  const m = obj(h.meter) as Meter | null;
+  if (m && typeof m.number === "string" && /^\d{11,13}$/.test(m.number) && typeof m.disco === "string" && /^[a-z]{2,20}$/.test(m.disco)) {
+    const balanceOk = typeof m.unitsKwh === "number" && Number.isFinite(m.unitsKwh) && m.unitsKwh >= 0 && m.unitsKwh <= 100_000 && plausibleMs(m.unitsAt) !== null;
+    h.meter = { number: m.number, disco: m.disco, ...(typeof m.customerName === "string" ? { customerName: m.customerName.slice(0, 80) } : {}),
+      ...(typeof m.minAmount === "number" && Number.isFinite(m.minAmount) && m.minAmount > 0 && m.minAmount <= 1_000_000 ? { minAmount: m.minAmount } : {}),
+      ...(balanceOk ? { unitsKwh: Math.round(m.unitsKwh! * 10) / 10, unitsAt: new Date(plausibleMs(m.unitsAt) as number).toISOString(), ...(m.lowerBound === true ? { lowerBound: true } : {}) } : {}) };
+  } else h.meter = null;
+  const STATUSES = new Set(["pending", "delivered", "failed"]);
+  h.purchases = arr<Purchase>(h.purchases)
+    .filter((x) => x && typeof x.ref === "string" && x.ref.length >= 12 && x.ref.length <= 64 && plausibleMs(x.at) !== null && typeof x.amount === "number" && Number.isFinite(x.amount) && x.amount > 0 && x.amount <= 10_000_000 && typeof x.meter === "string" && STATUSES.has(x.status))
+    .map((x) => ({ ref: x.ref, at: new Date(plausibleMs(x.at) as number).toISOString(), amount: x.amount, meter: x.meter.slice(0, 13), vendor: String(x.vendor ?? "").slice(0, 24), status: x.status,
+      ...(typeof x.token === "string" ? { token: x.token.replace(/\D/g, "").slice(0, 40) } : {}),
+      ...(typeof x.units === "number" && Number.isFinite(x.units) && x.units >= 0 ? { units: x.units } : {}),
+      ...(typeof x.message === "string" ? { message: x.message.slice(0, 200) } : {}),
+      ...(typeof x.vendorRef === "string" ? { vendorRef: x.vendorRef.slice(0, 64) } : {}) }));
+  // Bounded by AGE, not count: the rolling 24-hour spending ceiling sums these, so every purchase from the last day
+  // (and anything still pending) must survive. Older ones are history; keep the last few for the record.
+  const dayAgo = Date.now() - 25 * 3_600_000;
+  // Failed purchases cost nothing and do not count toward the ceiling: keep only the latest few, so they can never crowd the record past its size limit.
+  const failedKeep = new Set(h.purchases.filter((x) => x.status === "failed").slice(-MAX_PURCHASES).map((x) => x.ref));
+  h.purchases = h.purchases.filter((x) => x.status !== "failed" || failedKeep.has(x.ref));
+  const recent = h.purchases.filter((x) => x.status === "pending" || Date.parse(x.at) > dayAgo);
+  const older = h.purchases.filter((x) => !(x.status === "pending" || Date.parse(x.at) > dayAgo));
+  h.purchases = [...older.slice(-MAX_PURCHASES), ...recent.slice(-MAX_RECENT_PURCHASES)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   // One sample per hour slot, finite numbers only, newest last.
   const byHour = new Map<string, Sample>();
   for (const x of arr<Sample>(h.samples)) {

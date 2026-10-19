@@ -28,26 +28,29 @@ const conn = $<HTMLSpanElement>("conn"), brain = $<HTMLSpanElement>("brain"), vo
 const esc = (s: string) => s.replace(/[<&>"']/g, (c) => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
 let client: Client | null = null;
+const ALERTS_URI = "powerline://alerts";
 let tools: Tool[] = [];
 let token = sessionStorage.getItem("powerline.token") ?? "";
 const history: Message[] = [];
 let busy = false;
 let speak = false;
-const HINTS = ["How's the power?", "Set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve", "Remember the iron uses 2000 watts for 30 minutes", "Can I run the iron for 30 minutes?", "Plan my power for today", "Arm the plan", "How did we do this week?", "How long can we last if the grid goes?", "Give me the evening briefing"];
+const HINTS = ["How's the power?", "Set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve", "Remember the iron uses 2000 watts for 30 minutes", "Can I run the iron for 30 minutes?", "Plan my power for today", "Arm the plan", "How did we do this week?", "How long can we last if the grid goes?", "My meter is 1111 1111 1111 1, Ikeja Electric, 3 units left", "How are my units?", "Buy ₦5,000 of units", "Give me the evening briefing"];
 
 // ---------- rendering ----------
 function add(el: HTMLElement) { thread.appendChild(el); el.scrollIntoView({ block: "end", behavior: "smooth" }); return el; }
 function you(text: string) { const d = document.createElement("div"); d.className = "msg you"; d.textContent = text; add(d); }
 function alexa(text: string, toolNote?: string) {
   const d = document.createElement("div"); d.className = "msg alexa";
-  d.innerHTML = `<div class="who">Assistant · Powerline</div><div>${esc(text)}</div>${toolNote ? `<div class="tool">${toolNote}</div>` : ""}`;
+  // A prepaid token must read as one unbroken 20-digit code, never wrap mid-token.
+  const body = esc(text).replace(/\b\d{4}(?:-\d{4}){4}\b/g, (t) => `<span class="nowrap">${t}</span>`);
+  d.innerHTML = `<div class="who">Assistant · Powerline</div><div>${body}</div>${toolNote ? `<div class="tool">${toolNote}</div>` : ""}`;
   add(d); if (speak) say(text);
 }
 function toast(kind: string, text: string, sub?: string) {
   const d = document.createElement("div"); d.className = `toast ${esc(kind)}`;
   // A pushed reminder is the headline moment; assistive tech must hear it too.
   d.setAttribute("role", "status"); d.setAttribute("aria-live", kind === "critical" || kind === "alarm" ? "assertive" : "polite");
-  d.innerHTML = `${esc(text)}<small>${esc(sub ?? `pushed by Powerline · ${kind}`)}</small>`;
+  d.innerHTML = `${esc(text).replace(/\b\d{4}(?:-\d{4}){4}\b/g, (t) => `<span class="nowrap">${t}</span>`)}<small>${esc(sub ?? `pushed by Powerline · ${kind}`)}</small>`;
   add(d); if (speak) say(text);
 }
 let thinking: HTMLElement | null = null;
@@ -127,10 +130,12 @@ async function reconnect(): Promise<boolean> {
 }
 async function callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   if (!client && !(await reconnect())) throw new Error("not connected"); // a card click after the stream dropped recovers like the chat does
-  try { return (await client!.callTool({ name, arguments: args })) as ToolResult; }
+  // Long enough to cover a question the server asks mid-call (buy_units waits up to 120 s for the person's answer).
+  const opts = { timeout: 150_000 };
+  try { return (await client!.callTool({ name, arguments: args }, opts)) as ToolResult; }
   catch (e) {
     if (!sessionGone(e) || !(await reconnect())) throw e;
-    return (await client!.callTool({ name, arguments: args })) as ToolResult; // once more on the fresh session
+    return (await client!.callTool({ name, arguments: args }, opts)) as ToolResult; // once more on the fresh session
   }
 }
 
@@ -146,7 +151,7 @@ async function turn(userText: string) {
   try {
     for (let hop = 0; hop < 6; hop++) {
       const reply = await llm(history);
-      brain.textContent = reply.mode === "bedrock" ? "Bedrock" : "rules (no Bedrock)";
+      brain.textContent = reply.mode === "bedrock" ? "Bedrock" : "phrase router (offline)";
       const assistant: Message = { role: "assistant", content: [] };
       if (reply.text) assistant.content.push({ text: reply.text });
       for (const c of reply.toolCalls) assistant.content.push({ toolUse: { toolUseId: c.id, name: c.name, input: c.input } });
@@ -213,13 +218,30 @@ async function connect(quiet = false) {
   if (!quiet) { conn.textContent = "connecting…"; conn.className = "pill"; }
   const transport = new StreamableHTTPClientTransport(new URL("/mcp", location.href), token ? { requestInit: { headers: { authorization: `Bearer ${token}` } } } : undefined);
   const c = new Client({ name: "powerline-demo-host", version: VERSION }, { capabilities: { elicitation: {} } });
+  // Alerts arrive as updates to powerline://alerts once subscribed (the current MCP channel); a server that
+  // cannot take subscriptions still reaches us through the logging push, which is handled too.
+  let lastAlertId = 0;
   c.fallbackNotificationHandler = async (n) => {
-    if (n.method === "notifications/message") { const d = (n.params as { data?: { kind?: string; text?: string } }).data; if (d?.text) toast(d.kind ?? "alert", d.text); }
+    if (n.method === "notifications/message") {
+      const d = (n.params as { data?: { kind?: string; text?: string; id?: number } }).data;
+      if (typeof d?.id === "number") { if (d.id <= lastAlertId) return; lastAlertId = d.id; } // same ids as the resource: never shown twice
+      if (d?.text) toast(d.kind ?? "alert", d.text);
+    }
+    if (n.method === "notifications/resources/updated" && (n.params as { uri?: string }).uri === ALERTS_URI) {
+      try {
+        const res = await c.readResource({ uri: ALERTS_URI });
+        const { alerts } = JSON.parse((res.contents[0] as { text?: string }).text ?? "{}") as { alerts?: Array<{ id: number; kind: string; text: string }> };
+        for (const a of alerts ?? []) if (a.id > lastAlertId) { lastAlertId = a.id; toast(a.kind, a.text); }
+      } catch (e) { console.warn("could not read alerts", e); }
+    }
   };
-  // Elicitation: Powerline asks before replacing an armed plan; answer with a plain confirm().
-  c.setRequestHandler("elicitation/create", async (req: { params?: { message?: string } }) => {
-    const ok = confirm(req.params?.message ?? "Powerline is asking for confirmation.");
-    return { action: ok ? "accept" : "decline", content: ok ? { replace: true } : undefined };
+  // Elicitation: Powerline asks before replacing an armed plan and before buying units. Every question it asks
+  // is a yes/no with boolean fields, so "yes" sets each of them true; "no" (or Escape) declines.
+  c.setRequestHandler("elicitation/create", async (req: { params?: { message?: string; requestedSchema?: { properties?: Record<string, { type?: string }> } } }, ctx?: { mcpReq?: { signal?: AbortSignal } }) => {
+    const ok = await ask(req.params?.message ?? "Powerline is asking for confirmation.", ctx?.mcpReq?.signal);
+    const props = req.params?.requestedSchema?.properties ?? {};
+    const content = Object.fromEntries(Object.entries(props).filter(([, v]) => v?.type === "boolean").map(([k]) => [k, true]));
+    return ok ? { action: "accept", content } : { action: "decline" };
   });
   let listed: Tool[];
   try {
@@ -233,12 +255,39 @@ async function connect(quiet = false) {
     return;
   }
   client = c; tools = listed;
+  if (c.getServerCapabilities()?.resources?.subscribe) await c.subscribeResource({ uri: ALERTS_URI }).catch((e) => console.warn("alerts subscription failed; falling back to logging", e));
   c.onclose = () => { if (client === c) { client = null; conn.textContent = "disconnected — reconnecting on next message"; conn.className = "pill bad"; } };
   conn.textContent = `connected · ${tools.length} tools`; conn.className = "pill ok";
   if (quiet) return;
   const health = await fetch("/healthz").then((r) => r.json()).catch(() => null) as { telemetry?: string; store?: { backend?: string }; llm?: boolean } | null;
-  brain.textContent = health?.llm ? "Bedrock" : "rules (no Bedrock)";
+  brain.textContent = health?.llm ? "Bedrock" : "phrase router (offline)";
   alexa(`Hi. I'm connected to Powerline${health?.telemetry ? ` (${health.telemetry})` : ""}. Ask me how the power is, whether you can run something, or to plan the day.`);
+}
+/**
+ * A styled yes/no question (the elicitation dialog). Resolves false on No, Escape, a cancelled or timed-out request,
+ * or a dialog the browser cannot show. Focus starts on No, and Yes ignores activation for the first half second, so a
+ * stray Enter from the message box can never confirm a purchase.
+ */
+function ask(message: string, signal?: AbortSignal): Promise<boolean> {
+  const dlg = $<HTMLDialogElement>("askDialog");
+  if (typeof dlg?.showModal !== "function") return Promise.resolve(confirm(message));
+  if (dlg.open) return Promise.resolve(false); // one question at a time (the open one closes itself on abort or expiry)
+  if (signal?.aborted) return Promise.resolve(false);
+  $<HTMLParagraphElement>("askText").textContent = message;
+  const yes = $<HTMLButtonElement>("askYes");
+  yes.disabled = true;
+  const arm = setTimeout(() => { yes.disabled = false; }, 500);
+  // The server gives up after its own timeout; close well before it so a late "yes" is never sent to a dead request.
+  const expire = setTimeout(() => { if (dlg.open) dlg.close("no"); }, 110_000);
+  const onAbort = () => { if (dlg.open) dlg.close("no"); };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  dlg.returnValue = "";
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => { clearTimeout(arm); clearTimeout(expire); signal?.removeEventListener("abort", onAbort); resolve(dlg.returnValue === "yes"); }, { once: true });
+    dlg.showModal();
+    $<HTMLButtonElement>("askNo").focus();
+    if (speak) say(message);
+  });
 }
 function askToken(problem?: string) {
   const dlg = $<HTMLDialogElement>("tokenDialog"), inp = $<HTMLInputElement>("tokenInput"), err = $<HTMLParagraphElement>("tokenError");
@@ -254,5 +303,7 @@ conn.onclick = () => { if (conn.textContent === "token required") askToken(); };
 // ---------- wiring ----------
 $<HTMLFormElement>("form").onsubmit = (e) => { e.preventDefault(); const t = input.value.trim(); if (!t) return; input.value = ""; void turn(t); };
 const hints = $<HTMLDivElement>("hints");
+// ?clean (for filming and screenshots): no hint chips under the message box.
+if (new URLSearchParams(location.search).has("clean")) hints.hidden = true;
 for (const h of HINTS) { const b = document.createElement("button"); b.type = "button"; b.textContent = h; b.onclick = () => void turn(h); hints.appendChild(b); }
 void connect();

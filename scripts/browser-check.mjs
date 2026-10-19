@@ -33,9 +33,16 @@ try {
   const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   const errors = []; page.on("pageerror", (e) => errors.push(String(e)));
   const dialogs = []; page.on("dialog", async (d) => { dialogs.push(d.message()); await d.dismiss(); });
+  const mcpBodies = []; page.on("request", (r) => { if (r.method() === "POST" && r.url().endsWith("/mcp")) mcpBodies.push(r.postData() ?? ""); });
   await page.goto(`${url}/demo`);
   await page.waitForFunction(() => document.getElementById("conn")?.textContent?.startsWith("connected"), null, { timeout: 15000 });
   const ask = async (t, ms = 2500) => { await page.fill("#input", t); await page.click("#send"); await page.waitForTimeout(ms); };
+  // Elicitation shows the host's own yes/no dialog: wait for it, note the question, answer it.
+  const answer = async (choice) => {
+    await page.waitForSelector("#askDialog[open]", { timeout: 15000 });
+    dialogs.push(await page.textContent("#askText"));
+    await page.click(choice === "yes" ? "#askYes" : "#askNo");
+  };
   await ask("Remember the iron uses 2000 watts for 30 minutes", 1500);
   await ask("add the pump", 1500);
   await ask("How's the power?", 3000);
@@ -49,12 +56,19 @@ try {
     const txt = await planner.evaluate(() => document.body.innerText);
     /not planned/.test(txt) ? console.log("✓ planner card re-planned through the server after an untick") : fail("planner did not re-plan");
     await planner.click("#arm"); await page.waitForTimeout(2000);
-    /Armed/.test(await planner.evaluate(() => document.getElementById("arm").textContent)) ? console.log("✓ armed from the card") : fail("card arm failed");
+    await planner.waitForFunction(() => /Armed/.test(document.getElementById("arm")?.textContent ?? ""), null, { timeout: 15000 }).catch(() => {});
+    const armTxt = await planner.evaluate(() => `${document.getElementById("arm").textContent} / ${document.getElementById("status")?.textContent ?? ""}`);
+    /Armed/.test(armTxt) ? console.log("✓ armed from the card") : fail(`card arm failed: ${armTxt}`);
   }
-  await ask("Arm the plan", 3500);
+  await ask("Arm the plan", 0);
+  await answer("no").catch(() => {});
+  await page.waitForTimeout(1500);
   dialogs.some((m) => /already armed/.test(m)) ? console.log("✓ elicitation surfaced as a dialog and 'no' was honoured") : fail(`no elicitation dialog (${JSON.stringify(dialogs)})`);
   await ask("How did we do this week?", 3000);
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /run the|Battery|Grid/.test(t.textContent)), null, { timeout: 90000 }).then(() => console.log("✓ a pushed notification landed as a toast")).catch(() => fail("no notification toast within 90 s"));
+  const subscribed = mcpBodies.some((b) => b.includes('"resources/subscribe"') && b.includes("powerline://alerts"));
+  const readAlerts = mcpBodies.some((b) => b.includes('"resources/read"') && b.includes("powerline://alerts"));
+  subscribed && readAlerts ? console.log("✓ the host subscribed to powerline://alerts and read it when notified") : fail(`alert subscription not used (subscribed=${subscribed}, read=${readAlerts})`);
   // Theme toggle propagates into the card iframes (host context change over the bridge) without a page error.
   await page.click("#theme").catch(() => {});
   await page.waitForTimeout(800);
@@ -72,6 +86,17 @@ try {
   await page.waitForFunction(() => { const m = [...document.querySelectorAll(".msg.alexa")].pop(); return m && !/^\s*$/.test(m.textContent ?? "") && !document.querySelector(".thinking"); }, null, { timeout: 30000 }).catch(() => {});
   const lastMsg = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa")].pop()?.textContent ?? "");
   /didn't catch|What would you like/.test(lastMsg) ? fail(`free-form briefing fell through to the menu: ${lastMsg.slice(0, 120)}`) : console.log("✓ a free-form briefing request was understood");
+  // Prepaid units: record the meter, then buy — the host's dialog asks first, the token comes back in the reply and as a pushed toast.
+  await ask("My meter is 1111 1111 1111 1 with Ikeja Electric and it shows 2 units", 2000);
+  const meterMsg = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa")].pop()?.textContent ?? "");
+  /verified with Ikeja Electric/.test(meterMsg) ? console.log("✓ meter verified and saved") : fail(`set_meter: ${meterMsg.slice(0, 160)}`);
+  await ask("Buy 5,000 naira of units", 0);
+  await answer("yes").catch((e) => fail(`no purchase confirmation dialog (${e.message})`));
+  dialogs.some((m) => /^Buy ₦5,000 of electricity for meter …1111/.test(m)) ? console.log("✓ the purchase was confirmed in the host's dialog first") : fail(`purchase question: ${JSON.stringify(dialogs.slice(-1))}`);
+  await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Token for meter …1111: \d{4}-\d{4}/.test(t.textContent)), null, { timeout: 20000 })
+    .then(() => console.log("✓ the token landed as a pushed toast")).catch(() => fail("no token toast"));
+  const buyMsg = await page.evaluate(() => [...document.querySelectorAll(".msg.alexa")].pop()?.textContent ?? "");
+  /Bought ₦5,000 of units .* Token: \d{4}-/.test(buyMsg) ? console.log("✓ the reply carries the token") : fail(`buy reply: ${buyMsg.slice(0, 160)}`);
   // A redeploy or a reaped session must not strand the page: restart the server, ask again, expect a fresh answer.
   server.kill("SIGTERM"); await new Promise((r) => server.on("exit", r));
   server = await boot();

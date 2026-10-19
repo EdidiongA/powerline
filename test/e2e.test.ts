@@ -152,3 +152,75 @@ test("an item that can run right now is announced once by the arming session, an
     await a.client.close(); await b.client.close();
   } finally { await s.stop(); }
 });
+
+test("alerts over resource subscriptions: a subscribed host gets resources/updated (not the deprecated logging push), a plain host still gets logging", async () => {
+  const s = await boot({ SIM_START_SOC: "70", SIM_CLOCK_START: "2026-10-01T06:50:00Z", SIM_SPEED: "3000", ALERT_INTERVAL_MS: "1000" });
+  try {
+    // Host A subscribes to powerline://alerts; host B does nothing special (MCPJam, older hosts).
+    const transport = new StreamableHTTPClientTransport(new URL(`${s.url}/mcp`));
+    const a = new Client({ name: "subscriber", version: "0" }, { capabilities: {} });
+    const updates: string[] = []; const logged: unknown[] = [];
+    a.fallbackNotificationHandler = async (n) => {
+      if (n.method === "notifications/resources/updated") updates.push((n.params as { uri: string }).uri);
+      if (n.method === "notifications/message") logged.push(n.params);
+    };
+    await a.connect(transport);
+    assert.equal(a.getServerCapabilities()?.resources?.subscribe, true, "the server advertises resource subscriptions");
+    assert.ok((await a.listResources()).resources.some((r) => r.uri === "powerline://alerts"), "the alerts resource is listed");
+    await a.subscribeResource({ uri: "powerline://alerts" });
+    const b = await connect(s.url);
+
+    const call = (name: string, args: Record<string, unknown> = {}) => a.callTool({ name, arguments: args });
+    await call("setup_system", { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 });
+    await call("add_appliance", { name: "iron", watts: 2000, minutes: 30 });
+    await call("arm_plan");
+    const deadline = Date.now() + 90_000;
+    while ((updates.length === 0 || !b.notes.some((n) => n.kind === "reminder")) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 500));
+
+    assert.ok(updates.includes("powerline://alerts"), "the subscribed host was told the alerts resource changed");
+    const read = await a.readResource({ uri: "powerline://alerts" });
+    const { alerts } = JSON.parse((read.contents[0] as { text: string }).text) as { alerts: Array<{ id: number; kind: string; text: string }> };
+    const reminders = alerts.filter((x) => x.kind === "reminder");
+    assert.equal(reminders.length, 1, `exactly one reminder in the resource: ${JSON.stringify(alerts)}`);
+    assert.match(reminders[0].text, /iron/);
+    assert.equal(logged.length, 0, "a subscribed host is not also sent the deprecated logging push");
+    assert.equal(b.notes.filter((n) => n.kind === "reminder").length, 1, "an unsubscribed host still hears it, once, over logging");
+
+    await a.unsubscribeResource({ uri: "powerline://alerts" });
+    await a.close(); await b.client.close();
+  } finally { await s.stop(); }
+});
+
+test("an alert heard over logging before subscribing carries the same id as its resource entry, so a late subscriber never shows it twice; other URIs can't be subscribed", async () => {
+  // Battery just above the reserve: the monitor raises a "low" alert on its first tick, before this host subscribes.
+  const s = await boot({ SIM_STEADY: "1", SIM_START_SOC: "26", SIM_CLOCK_START: "2026-10-01T20:00:00Z", SIM_SPEED: "0.01", ALERT_INTERVAL_MS: "700", ALERT_REPEAT_MS: "1000" });
+  try {
+    const transport = new StreamableHTTPClientTransport(new URL(`${s.url}/mcp`));
+    const c = new Client({ name: "late-subscriber", version: "0" }, { capabilities: {} });
+    const logged: Array<{ id?: number; kind: string }> = []; let updates = 0;
+    c.fallbackNotificationHandler = async (n) => {
+      if (n.method === "notifications/message") logged.push((n.params as { data: { id?: number; kind: string } }).data);
+      if (n.method === "notifications/resources/updated") updates++;
+    };
+    await c.connect(transport);
+    await c.callTool({ name: "setup_system", arguments: { arrayKw: 4.5, batteryKwh: 10, inverterKw: 5, reserveSocPct: 20 } });
+    const until = async (ok: () => boolean, ms = 20_000) => { const end = Date.now() + ms; while (!ok() && Date.now() < end) await new Promise((r) => setTimeout(r, 200)); };
+    await until(() => logged.length > 0);
+    assert.ok(logged.length > 0, "an alert arrived over logging before subscribing");
+    assert.equal(typeof logged[0].id, "number", "logging alerts carry an id");
+
+    await assert.rejects(c.subscribeResource({ uri: "powerline://household" }), /alerts/i, "only the alerts resource is subscribable");
+    await c.subscribeResource({ uri: "powerline://alerts" });
+    const before = logged.length;
+    await until(() => updates > 0);
+    assert.ok(updates > 0, "after subscribing, alerts come as resource updates");
+    assert.equal(logged.length, before, "and no longer over logging");
+
+    const { alerts } = JSON.parse(((await c.readResource({ uri: "powerline://alerts" })).contents[0] as { text: string }).text) as { alerts: Array<{ id: number }> };
+    const seen = new Set(logged.map((l) => l.id));
+    const fresh = alerts.filter((a) => !seen.has(a.id));
+    assert.ok(alerts.some((a) => seen.has(a.id)), "the earlier alert is in the resource under the same id");
+    assert.ok(fresh.length >= 1, "and the new one is distinguishable by id");
+    await c.close();
+  } finally { await s.stop(); }
+});

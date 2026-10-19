@@ -4,6 +4,8 @@ import { z } from "zod";
 import { forecast } from "../forecast.js";
 import { assess, type SessionContext } from "../situation.js";
 import * as bedrock from "../bedrock.js";
+import { unitsOutlook } from "../units.js";
+import { hourLabel } from "../config.js";
 
 /** The language model behind the briefing; injectable so the fallback path is testable without AWS. */
 export interface Summarizer { enabled: boolean; summarize(text: string): Promise<string> }
@@ -17,8 +19,11 @@ export function registerBriefingTools(server: McpServer, ctx: SessionContext, ll
     inputSchema: z.object({}),
     annotations: { readOnlyHint: true },
   }, async () => {
-    const { t, h, profile, input } = await assess(ctx);
+    const { t, h, profile, input, localHour } = await assess(ctx);
     const f = forecast(input);
+    // Prepaid units: only said when they matter (they run out within the day, or the balance is unknown and the grid is needed).
+    const u = h.meter ? unitsOutlook({ meter: h.meter, samples: h.samples ?? [], base: f, nowIso: t.at, tariff: h.tariff }) : null;
+    const unitsFact = !u ? "" : u.balanceKwh !== null && u.balanceKwh <= 0.05 && !u.lowerBound ? `The prepaid meter is out of units${u.suggestedAmount ? `; a top-up of ₦${u.suggestedAmount.toLocaleString("en")} covers tomorrow` : ""}.` : u.runsOutHour !== null ? `Prepaid units run out around ${hourLabel(localHour, u.runsOutHour)}${u.suggestedAmount ? `; a top-up of ₦${u.suggestedAmount.toLocaleString("en")} covers tomorrow` : ""}.` : u.balanceKwh === null && u.needNext24hKwh > 0 ? `Meter balance unknown; the next day needs about ${u.needNext24hKwh} kWh from the grid.` : "";
     const gridOn = input.gridForecast.filter(Boolean).length;
     const heavy = h.appliances.filter((a) => a.watts >= 1000).map((a) => a.name);
     const facts = [
@@ -27,6 +32,7 @@ export function registerBriefingTools(server: McpServer, ctx: SessionContext, ll
         : f.hitsFloor ? `Reserve reached in ${f.hoursToFloor!.toFixed(1)} h; lowest ${f.minSocPct}%.` : `Battery stays above reserve overnight; lowest ${f.minSocPct}%.`,
       gridOn ? `Grid expected on in ${gridOn} of the next 24 hours.` : `No grid expected tonight.`,
       h.appliances.length ? `Known heavy appliances: ${heavy.join(", ") || "none"}.` : "",
+      unitsFact,
     ].filter(Boolean).join(" ");
     if (!llm.enabled) return { content: [{ type: "text", text: facts }], _meta: { bedrock: false } };
     try {

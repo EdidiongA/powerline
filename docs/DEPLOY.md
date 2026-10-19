@@ -47,8 +47,9 @@ Environment the container understands (all optional beyond `API_TOKENS`):
 | `ALLOWED_ORIGINS` | a browser host's origin, if one will connect (e.g. `https://inspector.mcpjam.com`) |
 | `STORE` / `DYNAMO_TABLE` / `AWS_REGION` | `dynamodb` / `powerline` / `us-east-1` |
 | `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| `SIM_START_SOC` / `SIM_CLOCK_START` | leave unset for a live clock, or set for a scripted demo state |
-| `WEATHER_LAT` / `WEATHER_LON` | coordinates for the weather-aware solar curve (live clock only) |
+| `SIM_START_SOC` / `SIM_CLOCK_START` / `SIM_SPEED` / `SIM_STEADY` | the deploy script starts the judges' instance at 55 % and 20:00 UTC (9 pm Lagos) at 60× (a simulated minute per second); pass any of these to override, e.g. `SIM_SPEED=1` for real time |
+| `UNITS_VENDOR` | leave unset: the simulated vendor (no money). `vtpass` with `VTPASS_API_KEY` / `VTPASS_SECRET_KEY` uses VTpass's sandbox; `UNITS_MAX_NGN` / `UNITS_DAILY_NGN` set the spending ceilings. Keys passed this way sit in the task definition as plain environment variables, which is fine for sandbox keys; live keys belong in AWS Secrets Manager |
+| `WEATHER_LAT` / `WEATHER_LON` | coordinates for the weather-aware solar curve (used while the simulated time falls inside the fetched forecast; best with `SIM_SPEED=1`) |
 | `PUBLIC_URL` | not needed here — the load balancer sends `x-forwarded-proto` and the public `Host` |
 
 Cost with the hackathon credits: effectively zero (one 1 vCPU / 2 GB task plus the load balancer).

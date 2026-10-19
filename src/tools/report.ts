@@ -4,6 +4,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@model
 import { z } from "zod";
 import { assess, type SessionContext } from "../situation.js";
 import { updateHousehold } from "../store/index.js";
+import { normalizeCurrency } from "../store/types.js";
 import { autonomyHours, dailyReports, periodSamples, summarize } from "../history.js";
 import { gridProbabilityByHour } from "../forecast.js";
 import { hourLabel, localClock } from "../config.js";
@@ -72,7 +73,8 @@ export function registerReportTools(server: McpServer, ctx: SessionContext): voi
     description: "What a grid kWh costs, so reports can say what the grid cost and what the sun was worth. E.g. 225 NGN per kWh.",
     inputSchema: z.object({ perKwh: z.number().min(0).max(100_000), currency: z.string().trim().min(1).max(8).default("NGN") }),
     annotations: { idempotentHint: true },
-  }, async ({ perKwh, currency }) => {
+  }, async ({ perKwh, currency: raw }) => {
+    const currency = normalizeCurrency(raw);
     await updateHousehold(ctx.userId, (hh) => { hh.tariff = { currency, perKwh }; });
     return { content: [{ type: "text", text: `Saved: ${currency} ${perKwh} per kWh from the grid.` }] };
   });
