@@ -1,4 +1,4 @@
-# Powerline — Alexa+ home power copilot
+# Powerline: Alexa+ home power copilot
 
 [![CI](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml/badge.svg)](https://github.com/EdidiongA/powerline/actions/workflows/ci.yml)
 [![tests](https://img.shields.io/badge/tests-165%20%2B%20headless%20browser-1e9e5a)](test/)
@@ -22,19 +22,19 @@ anyone can try it in a browser.
 
 | | |
 | --- | --- |
-| **Tools · prompts · cards · resources** | 17 · 5 · 3 · 5 — every tool annotated (`readOnly` / `destructive` / `idempotent`) |
+| **Tools · prompts · cards · resources** | 17 · 5 · 3 · 5; every tool annotated (`readOnly` / `destructive` / `idempotent`) |
 | **Decides** | `can_i_run`, `plan_day` from a property-tested forecast: SOC integration, learned grid pattern, clear-sky solar scaled by the array's *observed* yield |
 | **Acts** | `arm_plan` → reminders pushed over the session stream at each start time; low-battery / grid alerts; asks first (elicitation) before replacing a committed plan |
-| **Buys** | `prepaid_units` says when the meter's units run out and what that does to the battery; `buy_units` tops up after an explicit yes (elicitation, or a quote on hosts that can't ask), with spending caps, pending-before-vend records and no double purchase — simulated vendor by default, **VTpass sandbox** when keyed |
-| **Remembers** | profile, appliances, tariff, prepaid meter and purchases, armed plan, 14 days of hourly history per household — DynamoDB (conditional writes) or disk |
+| **Buys** | `prepaid_units` says when the meter's units run out and what that does to the battery; `buy_units` tops up after an explicit yes (elicitation, or a quote on hosts that can't ask), with spending caps, pending-before-vend records and no double purchase; simulated vendor by default, **VTpass sandbox** when keyed |
+| **Remembers** | profile, appliances, tariff, prepaid meter and purchases, armed plan, 14 days of hourly history per household, in DynamoDB (conditional writes) or on disk |
 | **Learns** | after 3 days the forecast uses *this* home's hour-by-hour load shape and real solar yield; the report says so |
-| **Reports** | solar made, house used, grid hours and cost, worst battery point — today / yesterday / week |
+| **Reports** | solar made, house used, grid hours and cost, worst battery point, for today / yesterday / week |
 | **Real data** | Victron VRM (read live from Victron's public demo installation), Growatt OpenAPI (replay-tested), simulator |
 | **Host** | `/demo`: full MCP Apps host (SDK `AppBridge`), pushed alerts as toasts, elicitation dialog, voice in/out, Bedrock or offline rule router |
-| **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh) — the flow Alexa+ uses, proven with the official client |
+| **Identity** | bearer token = household; sessions bound to it; fails closed; CORS for browser hosts; **OAuth 2.1 account linking built in** (discovery, dynamic registration, consent page, PKCE, rotating refresh), the flow Alexa+ uses, proven with the official client |
 | **Weather** | optional Open-Meteo radiation forecast for the household's coordinates replaces the clear-sky curve; falls back silently |
 | **AWS** | Amazon Bedrock briefing (deadline + fallback), Amazon DynamoDB store, one-command deploy to Amazon ECS Express Mode (public HTTPS), and an autonomous evening agent on **Strands Agents + Bedrock** that drives Powerline over MCP ([`agent/`](agent/)) |
-| **Proven** | 165 tests (plus 7 for the agent) — unit, property (1,500 random households), fuzz (425 hostile calls), real-process transport, end-to-end with the official client — plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
+| **Proven** | 165 tests (plus 7 for the agent): unit, property (1,500 random households), fuzz (425 hostile calls), real-process transport, end-to-end with the official client, plus headless-Chromium host checks; CI on Ubuntu + Windows + Docker |
 | **For agents** | Agent Skill (`skills/`), prompts, household resource, 30-entry friction log, docs PR upstream |
 
 Supported inverter platforms: **Growatt** (ShinePhone API token) and **Victron Energy** (VRM Portal access
@@ -44,12 +44,12 @@ token). A built-in simulator runs without any hardware.
 
 | Requirement | Where it is called at runtime |
 | --- | --- |
-| **Alexa+ track** — self-hosted MCP server, spec **2025-11-25**, **Streamable HTTP** | [`src/http.ts`](src/http.ts) — `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/server` v2; POST / GET (SSE) / DELETE on `/mcp`, sessions keyed by `Mcp-Session-Id` |
-| MCP Apps (cards), prompts, server-initiated notifications | [`src/tools/status.ts`](src/tools/status.ts), [`planning.ts`](src/tools/planning.ts) and [`report.ts`](src/tools/report.ts) — `registerAppTool` / `registerAppResource` (`@modelcontextprotocol/ext-apps`); [`src/tools/prompts.ts`](src/tools/prompts.ts); [`src/alerts.ts`](src/alerts.ts) + [`src/push.ts`](src/push.ts) — `sendResourceUpdated` on the subscribed `powerline://alerts` resource, `sendLoggingMessage` as the fallback |
-| Purchasing (confirmed, capped) | [`src/tools/units.ts`](src/tools/units.ts) — `buy_units` asks via `elicitation/create` before spending; [`src/vending.ts`](src/vending.ts) — VTpass `merchant-verify` / `pay` / `requery` |
+| **Alexa+ track**: self-hosted MCP server, spec **2025-11-25**, **Streamable HTTP** | [`src/http.ts`](src/http.ts): `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/server` v2; POST / GET (SSE) / DELETE on `/mcp`, sessions keyed by `Mcp-Session-Id` |
+| MCP Apps (cards), prompts, server-initiated notifications | [`src/tools/status.ts`](src/tools/status.ts), [`planning.ts`](src/tools/planning.ts) and [`report.ts`](src/tools/report.ts): `registerAppTool` / `registerAppResource` (`@modelcontextprotocol/ext-apps`); [`src/tools/prompts.ts`](src/tools/prompts.ts); [`src/alerts.ts`](src/alerts.ts) + [`src/push.ts`](src/push.ts): `sendResourceUpdated` on the subscribed `powerline://alerts` resource, `sendLoggingMessage` as the fallback |
+| Purchasing (confirmed, capped) | [`src/tools/units.ts`](src/tools/units.ts): `buy_units` asks via `elicitation/create` before spending; [`src/vending.ts`](src/vending.ts): VTpass `merchant-verify` / `pay` / `requery` |
 | Agent Skill | [`skills/powerline-home-power/SKILL.md`](skills/powerline-home-power/SKILL.md) |
-| **AWS Builder** — Amazon Bedrock, Amazon DynamoDB, Strands Agents | [`src/bedrock.ts`](src/bedrock.ts) — `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts) — conditional `PutItem` on `version`; [`agent/powerline_agent.py`](agent/powerline_agent.py) — Strands `Agent` + `BedrockModel` + `MCPClient` (AgentCore Runtime app in [`agent/agentcore_app.py`](agent/agentcore_app.py)) |
-| **Open Source** — MIT, created in the window | [`LICENSE`](LICENSE), [`CHANGELOG.md`](CHANGELOG.md); upstream docs PR to the MCP TypeScript SDK |
+| **AWS Builder**: Amazon Bedrock, Amazon DynamoDB, Strands Agents | [`src/bedrock.ts`](src/bedrock.ts): `ConverseCommand`; [`src/store/dynamo.ts`](src/store/dynamo.ts): conditional `PutItem` on `version`; [`agent/powerline_agent.py`](agent/powerline_agent.py): Strands `Agent` + `BedrockModel` + `MCPClient` (AgentCore Runtime app in [`agent/agentcore_app.py`](agent/agentcore_app.py)) |
+| **Open Source**: MIT, created in the window | [`LICENSE`](LICENSE), [`CHANGELOG.md`](CHANGELOG.md); upstream docs PR to the MCP TypeScript SDK |
 
 ## Evaluate it in five minutes
 
@@ -60,7 +60,7 @@ git clone https://github.com/EdidiongA/powerline && cd powerline
 docker compose up                      # simulator at night, battery at 34 %; endpoint on :3000
 ```
 
-Then open **http://127.0.0.1:3000/demo** — Powerline's own **simulated Alexa+ host**: a complete MCP Apps
+Then open **http://127.0.0.1:3000/demo**, Powerline's own **simulated Alexa+ host**: a complete MCP Apps
 host in one page (a real MCP client to `/mcp`, cards rendered through the SDK's `AppBridge`, alerts and
 reminders arriving as they are pushed, voice in and out). It runs on Amazon Bedrock when `BEDROCK_MODEL_ID`
 is set and on a deterministic phrase router otherwise, and says which in its header. It is a stand-in for
@@ -68,16 +68,16 @@ the device, and says that too.
 
 ![Simulated Alexa+ host on the live deployment, Bedrock phrasing the replies](docs/demo-host.png)
 
-Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp` — [MCPJam Inspector](https://www.mcpjam.com)
-(`npx @mcpjam/inspector@latest`, **Add server → HTTP**) — and say:
+Or connect any other MCP Apps host to `http://127.0.0.1:3000/mcp`, such as [MCPJam Inspector](https://www.mcpjam.com)
+(`npx @mcpjam/inspector@latest`, **Add server → HTTP**), and say:
 
 1. **Set up my solar: 4.5 kW array, 10 kWh battery, 5 kW inverter, 20% reserve**
 2. **Remember the iron uses 2000 watts for 30 minutes**
 3. **How's the power?** → dashboard card: state of charge, a plain verdict, the 24-hour ribbon
-4. **Can I run the iron for 30 minutes?** → *yes*, or *Not now — best time HH:00* with the projected low point, from the forecast, not a guess
+4. **Can I run the iron for 30 minutes?** → *yes*, or *Not now, best time HH:00* with the projected low point, from the forecast, not a guess
 5. **Plan my power for today** → planner card; untick an appliance and watch it re-plan
 6. **How did we do this week?** → report card. A fresh simulated household starts with a seeded week of history (`SEED_HISTORY_DAYS=7`, set in `compose.yaml` and the deploy script), so there is something to report from the first minute; `npm run seed:history` does the same by hand.
-7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00 — run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600 npm start` (or change `SIM_SPEED` in `compose.yaml`) to watch it land in about a minute
+7. Click **Arm plan** on the card → Powerline confirms each start time, then pushes *"It's 09:00, run the iron now"* over the session stream when that time arrives, unprompted. The simulator runs a minute per second, so start with `SIM_SPEED=600 npm start` (or change `SIM_SPEED` in `compose.yaml`) to watch it land in about a minute
 8. **Use the evening_briefing tool** → one spoken paragraph (Bedrock when `BEDROCK_MODEL_ID` is set)
 
 Without Docker: `npm install && npm run build && npm start`. Tests: `npm test` (165; only the end-to-end suite touches the network, and only on localhost).
@@ -92,15 +92,15 @@ npm start              # simulator; MCP endpoint at http://127.0.0.1:3000/mcp
 npm run start:aws      # same, but loads .env (AWS credentials + BEDROCK_MODEL_ID) for the Bedrock briefing
 npm run smoke          # (second terminal) full protocol round-trip through the core tools + alert stream
 # to see an alert during smoke: SIM_START_SOC=29 SIM_CLOCK_START=2026-09-09T20:30:00Z ALERT_INTERVAL_MS=2000 npm start
-npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay — 165 tests; e2e drives the real process with the official client
+npm test               # forecast, situation, cards, tools, HTTP transport, store, auth, Growatt replay: 165 tests; e2e drives the real process with the official client
 ```
 
 Live telemetry:
 
 ```bash
-# Victron — your own site (VRM Portal → Preferences → Integrations → Access tokens)
+# Victron: your own site (VRM Portal → Preferences → Integrations → Access tokens)
 POWER_SOURCE=victron VRM_TOKEN=... VRM_SITE_ID=123456 npm start
-# Victron — public demo site, no account needed
+# Victron: public demo site, no account needed
 POWER_SOURCE=victron VRM_DEMO=1 VRM_SITE_ID=219742 npm start
 # Growatt (ShinePhone → Me → username → API Token; app-generated tokens are most reliable)
 POWER_SOURCE=growatt GROWATT_TOKEN=... npm start
@@ -131,11 +131,11 @@ start time without being asked, and the report's tabs re-query the server for to
 | `evening_briefing` | "Power briefing" | One spoken paragraph (Amazon Bedrock when configured). |
 | `setup_system` | "Set up my solar" | Stores array kW, battery kWh, inverter kW, reserve % and the household's UTC offset. Persists across sessions. |
 | `add_appliance` / `list_appliances` | "Remember the washing machine is 500 watts", "add the kettle" | Appliances by name for planning. Common appliances need no wattage: twenty presets (iron, kettle, pump, AC, fridge…) with aliases ("pumping machine", "split unit"). |
-| `plan_day` | "Plan my power for today" | Schedules all known appliances into the next 24 h, solar-surplus first. **Interactive planner card** — tick/untick appliances and the plan re-runs live. |
+| `plan_day` | "Plan my power for today" | Schedules all known appliances into the next 24 h, solar-surplus first. **Interactive planner card**: tick/untick appliances and the plan re-runs live. |
 | `remove_appliance` | "Forget the pump" | Drops an appliance and any reminder armed for it. |
-| `arm_plan` / `disarm_plan` | "Arm the plan" / "Cancel the reminders" | Commits the plan. Powerline then **acts on its own**: at each start time it pushes *"It's 10:00 — run the iron now, the sun is covering it"* over the session stream. The planner card has an **Arm plan** button that does the same. Replacing a plan that is already armed **asks first** via MCP elicitation when the host supports it. |
+| `arm_plan` / `disarm_plan` | "Arm the plan" / "Cancel the reminders" | Commits the plan. Powerline then **acts on its own**: at each start time it pushes *"It's 10:00, run the iron now, the sun is covering it"* over the session stream. The planner card has an **Arm plan** button that does the same. Replacing a plan that is already armed **asks first** via MCP elicitation when the host supports it. |
 | `log_grid_event` | "Grid just went off" | Feeds the learned per-weekday grid-availability pattern. |
-| `energy_report` | "How did we do this week?" | Solar made, house used, grid hours and cost, worst battery point — from the household's own hourly readings. **Report card** with today / yesterday / week tabs. Says what the forecast has learned. |
+| `energy_report` | "How did we do this week?" | Solar made, house used, grid hours and cost, worst battery point, from the household's own hourly readings. **Report card** with today / yesterday / week tabs. Says what the forecast has learned. |
 | `outage_outlook` | "How long can we last if NEPA goes?" | Hours of autonomy to the reserve if the grid went off now, and the hours the grid is usually off, from history. |
 | `set_tariff` | "Grid costs 225 naira a unit" | Lets reports price grid energy and value the sun. |
 | `set_meter` | "My meter is 1111 1111 1111 1, Ikeja Electric, 3 units left" | Verifies the prepaid meter with the vendor (customer name back) before saving it; records what the meter shows. |
@@ -148,7 +148,7 @@ the **array's observed yield** (dust, shade, cloud). Reports say so: *"Forecast 
 (7 days, array at 81% of clear-sky)"*. `npm run seed:history` fills a week of plausible history so this can
 be shown without waiting a week.
 
-**Prompts** (`prompts/list`): `evening_outlook`, `plan_my_day`, `can_i_run`, `how_did_we_do`, `set_up_household` — the
+**Prompts** (`prompts/list`): `evening_outlook`, `plan_my_day`, `can_i_run`, `how_did_we_do`, `set_up_household`: the
 phrasings a household actually uses, each pinning the tool sequence that answers well. **Resource**
 `powerline://household` is a read-only JSON snapshot (profile, appliances, tariff, armed plan, history depth).
 Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so a host can decide
@@ -172,14 +172,14 @@ nothing is bought without an explicit yes; a declined, cancelled, timed-out or u
 per-purchase and rolling 24-hour ceilings are checked inside the same conditional write that records the purchase; the
 purchase is stored as *pending* under a fresh VTpass request id before the vendor is called, and an unclear answer is
 re-queried with that id rather than bought again. Vendors sit behind one interface ([`src/vending.ts`](src/vending.ts)):
-a **simulated vendor** by default (deterministic tokens, no network, no money — every reply says so), or **VTpass**'s
+a **simulated vendor** by default (deterministic tokens, no network, no money; every reply says so), or **VTpass**'s
 bill-payment API, sandbox only unless `VTPASS_ALLOW_LIVE=1`. The VTpass adapter is replay-tested against the documented
 responses (verify, delivered, processing, failed, a dropped connection); the live deployment uses the simulated vendor.
 
 ![Prepaid units in the simulated host: the units run out at 22:00 while the grid is on; a confirmed ₦5,000 purchase returns the token, also pushed as an alert](docs/units.png)
 
 **Server-initiated alerts.** Each session runs a monitor (`src/alerts.ts`) that raises an alert when the battery
-drops within 10 points of the reserve, reaches it, or the grid flips, and at each armed start time — no client request
+drops within 10 points of the reserve, reaches it, or the grid flips, and at each armed start time, with no client request
 needed. Grid flips are also logged into the learned pattern automatically. Delivery (`src/push.ts`) uses **resource
 subscriptions**: every alert is appended to the session's `powerline://alerts` resource, and a host that has
 subscribed (`resources/subscribe`) receives `notifications/resources/updated` and reads the new entries. That
@@ -206,19 +206,25 @@ and mentions a suggested top-up, but it is never handed `buy_units`: an unattend
 Alexa+ / MCP client ──Streamable HTTP (sessions, SSE, CORS)──▶ src/http.ts      sessions, auth, reaper, / and /healthz
                                                                  ├─ src/auth.ts       bearer token → household (constant-time, fails closed)
                                                                  └─ src/server.ts     composition root: one McpServer per session
-                                                                    ├─ src/tools/      household · status · planning · briefing · report · prompts
+                                                                    ├─ src/tools/      household · status · planning · briefing · report · units · prompts
                                                                     ├─ src/situation.ts  live telemetry + stored household → ForecastInput
                                                                     ├─ src/forecast.ts   SOC integration, can_i_run, plan_day, grid learning (pure)
                                                                     ├─ src/history.ts    daily reports, learned load shape + PV yield, autonomy (pure)
                                                                     ├─ src/alerts.ts     server→client alerts + armed-plan reminders (delivered by src/push.ts)
                                                                     ├─ src/store/        disk (atomic) | dynamodb (conditional writes)
                                                                     ├─ src/telemetry/    sim | victron (VRM v2) | growatt (OpenAPI v1), shared cache
+                                                                    ├─ src/units.ts      prepaid balance, run-out hour, battery without units (pure)
+                                                                    ├─ src/vending.ts    meter check + purchase: simulated | VTpass (sandbox), request ids, requery
                                                                     ├─ src/bedrock.ts    Converse API briefing (AWS Builder), timeout + fallback
                                                                     ├─ src/recorder.ts    hourly history for every household, independent of sessions
                                                                     ├─ src/oauth.ts       OAuth 2.1 authorization server (account linking)
                                                                     ├─ src/weather.ts     Open-Meteo radiation → PV forecast (optional)
-                                                                    ├─ src/demo/          the simulated host's model step: Bedrock Converse or the rules router
+                                                                    ├─ src/demo/          the simulated host's model step: Bedrock Converse or the offline phrase router
                                                                     └─ src/ui/           MCP App cards: dashboard + planner + report, and the simulated host (Vite → single HTML)
+
+agent/ (Python) ── MCP client over Streamable HTTP ──▶ the same /mcp, with a household token
+   ├─ powerline_agent.py   Strands Agents SDK + BedrockModel (Claude on Amazon Bedrock): status, outlook, plan, arm, units
+   └─ agentcore_app.py     the same agent as an Amazon Bedrock AgentCore Runtime app (/ping, /invocations)
 ```
 
 **Forecast engine** (`src/forecast.ts`, pure functions, property-tested over thousands of random households): `net = pv + grid − load`, SOC integrated at
@@ -232,7 +238,7 @@ dashboard of tiles: the state of charge and a plain-language verdict ("holds pas
 a quiet three-column strip carries the live figures, and a single 24-hour ribbon shows the battery
 line against a solar field, grid bands and the reserve floor. The planner places each appliance as a
 block on the same time track. All three cards are tested in jsdom against absent, partial and hostile
-payloads (`test/cards.test.ts`) — a card that throws renders as a blank box in the host, so this is
+payloads (`test/cards.test.ts`): a card that throws renders as a blank box in the host, so this is
 the failure mode worth guarding.
 
 **Acting, not only advising.** `arm_plan` turns the schedule into commitments stored with the
@@ -247,7 +253,7 @@ everything else, so several open sessions never double-remind.
 discovery, `POST /oauth/register` (public clients, loopback or https redirects only), a consent page at
 `/oauth/authorize` where the person types the household and its secret, and `POST /oauth/token` for the
 authorization-code (PKCE S256, single-use codes) and refresh-token (rotating) grants. A `401` from `/mcp`
-carries `resource_metadata`, so a spec-following host — Alexa+, or the official MCP client — discovers,
+carries `resource_metadata`, so a spec-following host (Alexa+, or the official MCP client) discovers,
 registers, links and talks without any manual token. `test/oauth.test.ts` drives that whole flow with the
 official client against a real process, plus the refusals (wrong secret, bad verifier, reused code, foreign
 redirect). Tokens live in process memory; a restart means re-linking.
@@ -257,11 +263,11 @@ a session opened with one household's token can never read, write or attach to a
 guessing a session id (it gets `404`). Comparison is constant-time across all credentials; failures
 return `401` with a `WWW-Authenticate` challenge; a set-but-malformed variable fails closed rather
 than open. Left unset for local development, the endpoint is open and everything is one demo
-household — the startup line says which. Alexa account linking is the OAuth flow
+household; the startup line says which. Alexa account linking is the OAuth flow
 above; nothing downstream changes.
 
-**Store.** Powerline has two writers by design — tool calls, and the per-session alert monitor
-that logs grid flips on a timer — so a read-modify-write store loses updates. The DynamoDB
+**Store.** Powerline has two writers by design (tool calls, and the per-session alert monitor
+that logs grid flips on a timer), so a read-modify-write store loses updates. The DynamoDB
 backend carries a `version` attribute and writes conditionally; on conflict the mutation is
 **re-applied to freshly read data** rather than the stale copy, and the update cycle uses a
 strongly consistent read so the version it checks is current. Throttling and 5xx are retried
@@ -280,18 +286,18 @@ curl localhost:3000/healthz                # backend, table, region, session cou
 **Telemetry adapters** implement one interface (`src/telemetry/types.ts`) returning
 `{pv_w, load_w, battery_w, soc_pct, grid_w, grid_available}`. Adding a brand is one file.
 
-- **Victron VRM** — one `stats?type=custom` call (`Pdc`, `ac_loads`, `bp`, `bs`, `gp`). Tested live against the VRM
+- **Victron VRM**: one `stats?type=custom` call (`Pdc`, `ac_loads`, `bp`, `bs`, `gp`). Tested live against the VRM
   demo installation (`VRM_DEMO=1`). Grid presence is inferred from grid *power*: flow proves the grid is there, zero
   flow is reported as *unknown* rather than *off* (a grid-tied system with the sun carrying the whole load sits at 0 W
   all afternoon). VRM's documented attribute list has no AC-input-voltage code, which would settle it; on this
   adapter outages are learned from `log_grid_event` ("NEPA has taken light") rather than detected.
-- **Growatt OpenAPI v1** — `plant/list → device/list → mix_last_data | tlx_last_data`. Tested against
+- **Growatt OpenAPI v1**: `plant/list → device/list → mix_last_data | tlx_last_data`. Tested against
   recorded payload shapes for both device families (`test/fixtures/growatt/`): day, night on grid, night
   outage, string-typed numbers from MIN/TLX units, sparse payloads and API errors. Not yet run against a
   live unit; the raw payload is retained so a mismatch can be diagnosed from the friction log.
 
 **Prior art:** a read-only [Victron VRM MCP server](https://github.com/gimi-q/victron-vrm-mcp) wraps the VRM API 1:1.
-Powerline is not an API wrapper — the value is the forecast, the decision tools, cross-session household
+Powerline is not an API wrapper: the value is the forecast, the decision tools, cross-session household
 memory, multi-vendor telemetry, and the interactive card.
 
 ## Environment
@@ -300,7 +306,7 @@ memory, multi-vendor telemetry, and the interactive card.
 | --- | --- | --- |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | `HOST=0.0.0.0` behind a tunnel |
 | `ALLOWED_ORIGINS` | localhost only | comma-separated browser origins |
-| `API_TOKENS` | unset = open | `household:secret,household:secret` — the token identifies the household; each session is scoped to it. `API_TOKEN=<secret>` alone still works and maps to `DEMO_USER_ID`. Set but malformed → every request rejected (fails closed). |
+| `API_TOKENS` | unset = open | `household:secret,household:secret`; the token identifies the household; each session is scoped to it. `API_TOKEN=<secret>` alone still works and maps to `DEMO_USER_ID`. Set but malformed → every request rejected (fails closed). |
 | `STORE` | `disk` | `disk` \| `dynamodb` |
 | `DATA_DIR` | `./data` | disk store location |
 | `DYNAMO_TABLE` / `DYNAMO_ENDPOINT` / `DYNAMO_MAX_ATTEMPTS` | `powerline` / – / `6` | DynamoDB store |
@@ -313,7 +319,7 @@ memory, multi-vendor telemetry, and the interactive card.
 | `SEED_HISTORY_DAYS` | unset | simulated telemetry only: households with no readings get this many days of plausible history on start, ending where the simulated clock starts |
 | `HISTORY_INTERVAL_MS` | `30000` | how often the server-level recorder reads telemetry (one sample per hour slot per household is kept) |
 | `SIM_CUTOFF_SOC` | `10` | the simulated inverter's low-battery disconnect |
-| `SIM_STEADY` | — | `1` removes the simulator's reading-to-reading wobble in load and cloud, so a given hour always reads the same (demos, screenshots) |
+| `SIM_STEADY` | unset | `1` removes the simulator's reading-to-reading wobble in load and cloud, so a given hour always reads the same (demos, screenshots) |
 | `WEATHER_LAT` / `WEATHER_LON` | unset | Open-Meteo radiation forecast for these coordinates drives the solar curve (real clocks only) |
 | `OAUTH_ACCESS_TTL_S` / `OAUTH_REFRESH_TTL_S` | `3600` / 30 days | OAuth token lifetimes |
 | `PUBLIC_URL` | derived from `x-forwarded-proto`/`x-forwarded-host`, else the request | the origin advertised in OAuth metadata and `resource_metadata` challenges; set it behind a proxy that strips forwarding headers |
@@ -322,8 +328,8 @@ memory, multi-vendor telemetry, and the interactive card.
 | `SIM_ARRAY_KW` / `SIM_BATTERY_KWH` / `SIM_SPEED` | `4.5` / `10` / `60` | simulator; speed = sim-seconds per real second |
 | `SIM_START_SOC` / `SIM_CLOCK_START` | `65` / now | simulator starting SOC and ISO clock start (for demos at "night") |
 | `ALERT_INTERVAL_MS` / `ALERT_REPEAT_MS` | `30000` / `900000` | alert poll interval; repeat while condition persists |
-| `VRM_TOKEN` / `VRM_DEMO` / `VRM_SITE_ID` | — | Victron |
-| `GROWATT_TOKEN` / `GROWATT_BASE_URL` / `GROWATT_PLANT_ID` / `GROWATT_DEVICE_SN` / `GROWATT_DEVICE_TYPE` | — | Growatt (type 5 = SPH, 7 = MIN) |
+| `VRM_TOKEN` / `VRM_DEMO` / `VRM_SITE_ID` | unset | Victron |
+| `GROWATT_TOKEN` / `GROWATT_BASE_URL` / `GROWATT_PLANT_ID` / `GROWATT_DEVICE_SN` / `GROWATT_DEVICE_TYPE` | unset | Growatt (type 5 = SPH, 7 = MIN) |
 | `UNITS_VENDOR` | `sim` | `sim` \| `vtpass`; VTpass needs `VTPASS_API_KEY` + `VTPASS_SECRET_KEY` (free sandbox account); `VTPASS_BASE_URL` other than the sandbox is refused unless `VTPASS_ALLOW_LIVE=1` |
 | `UNITS_MAX_NGN` / `UNITS_DAILY_NGN` | `20000` / `50000` | `buy_units` ceilings: one purchase, and the rolling 24 hours |
 | `AWS_REGION` / `BEDROCK_MODEL_ID` | unset = disabled | e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`; `BEDROCK_TIMEOUT_MS` (15000) caps the call, plain facts on failure |
@@ -334,16 +340,16 @@ Judges and users deserve the line drawn clearly.
 
 | Real | Simulated / not claimed |
 | --- | --- |
-| The MCP server, transport, sessions, auth, cards, prompts, skill, alerts and reminders — all run as shown, through any MCP Apps host. | **The host.** `/demo` is Powerline's own simulated Alexa+ host (a genuine MCP Apps host, but not Alexa), and MCPJam Inspector is the other host used in the demo; no claim is made of a completed connection inside the production Alexa+ app. The simulated host's language model is Amazon Bedrock when configured, otherwise a phrase router — the header says which. |
-| **Prepaid units** — the balance arithmetic, the run-out forecast, the confirmation, the caps and the purchase records all run as shown. | **The vendor.** The live deployment and the demo use a simulated vendor (no network, no money); the VTpass adapter is replay-tested against VTpass's documented sandbox responses. No real-money purchase is made or claimed. |
-| **Victron VRM** telemetry — read live from Victron's public demo installation, and from any site with a personal access token. | **Growatt** — replay-tested against recorded payloads from both device families; not yet run against a live unit. |
-| **Amazon Bedrock** phrases the briefing; **Amazon DynamoDB** stores households — both exercised at runtime with the project's own account. | **The default telemetry** is a simulator (clear-sky Lagos curve, scripted outage bands) so the project runs with no hardware and no account. |
-| The forecast engine — pure arithmetic on the household's own numbers, property-tested. **Weather** — Open-Meteo's radiation forecast for the household's coordinates, when `WEATHER_LAT/LON` are set. | Without coordinates (and on a simulated clock) the solar curve is the clear-sky model; a provider forecast (VRM exposes one) is used only when it is a full, finite series. The card footer always says which source is in play. |
+| The MCP server, transport, sessions, auth, cards, prompts, skill, alerts and reminders all run as shown, through any MCP Apps host. | **The host.** `/demo` is Powerline's own simulated Alexa+ host (a genuine MCP Apps host, but not Alexa), and MCPJam Inspector is the other host used in the demo; no claim is made of a completed connection inside the production Alexa+ app. The simulated host's language model is Amazon Bedrock when configured, otherwise a phrase router: the header says which. |
+| **Prepaid units**: the balance arithmetic, the run-out forecast, the confirmation, the caps and the purchase records all run as shown. | **The vendor.** The live deployment and the demo use a simulated vendor (no network, no money); the VTpass adapter is replay-tested against VTpass's documented sandbox responses. No real-money purchase is made or claimed. |
+| **Victron VRM** telemetry, read live from Victron's public demo installation, and from any site with a personal access token. | **Growatt**: replay-tested against recorded payloads from both device families; not yet run against a live unit. |
+| **Amazon Bedrock** phrases the briefing; **Amazon DynamoDB** stores households; both are exercised at runtime with the project's own account. | **The default telemetry** is a simulator (clear-sky Lagos curve, scripted outage bands) so the project runs with no hardware and no account. |
+| The forecast engine: pure arithmetic on the household's own numbers, property-tested. **Weather**: Open-Meteo's radiation forecast for the household's coordinates, when `WEATHER_LAT/LON` are set. | Without coordinates (and on a simulated clock) the solar curve is the clear-sky model; a provider forecast (VRM exposes one) is used only when it is a full, finite series. The card footer always says which source is in play. |
 
 ## Deploying where Alexa+ can reach it
 
-Local use needs nothing beyond `npm start`. For a public, token-protected HTTPS endpoint — a tunnel
-for a demo, Amazon ECS Express Mode for always-on, or a Raspberry Pi beside the inverter — see
+Local use needs nothing beyond `npm start`. For a public, token-protected HTTPS endpoint (a tunnel
+for a demo, Amazon ECS Express Mode for always-on, or a Raspberry Pi beside the inverter), see
 [`docs/DEPLOY.md`](docs/DEPLOY.md). What changed when is in [`CHANGELOG.md`](CHANGELOG.md); what got in
 the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 
@@ -359,9 +365,9 @@ the way is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 - [x] Docker image + compose; CI on Ubuntu + Windows; 165 tests including property tests, a fuzz suite, an end-to-end suite over real Streamable HTTP with the official MCP client, on the engine and a boot-the-real-process transport suite
 - [x] MCP prompts, an Agent Skill, tool annotations, a household resource, and elicitation before the one destructive action
 - [x] History: hourly samples, energy reports with cost, outage outlook, and a forecast that learns the household's own load shape and real solar yield
-- [x] `scripts/deploy-ecs-express.sh` — one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI
+- [x] `scripts/deploy-ecs-express.sh`: one command from AWS CloudShell to a public HTTPS URL on ECS Express Mode; the image is published to GitHub's registry by CI
 - [x] Per-household timezone (`setup_system … tzOffset`)
-- [x] OAuth 2.1 account linking (PKCE, dynamic registration, consent page) — the Alexa+ linking path, tested with the official client
+- [x] OAuth 2.1 account linking (PKCE, dynamic registration, consent page), the Alexa+ linking path, tested with the official client
 - [x] Weather-aware solar forecast (Open-Meteo), with clear-sky fallback
 - [x] Simulated Alexa+ host at `/demo`: full MCP Apps host (AppBridge), Bedrock or rule router, voice, elicitation, pushed alerts
 - [x] Appliance presets so "add the kettle" just works
